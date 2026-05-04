@@ -1,158 +1,135 @@
-# **📊 Datasets Images EditSelect (v2.0)**
+# **📊 IMG Dataset Refiner (v3.0 Pro)**
 
-**Un gestionnaire et équilibreur de datasets local avancé pour la préparation d'entraînements de modèles IA**  
-[Installation](#bookmark=id.f3jo4a1xx81u) • [Nouveautés v2](#bookmark=id.mdvcmfrrldb) • [Fonctionnalités](#bookmark=id.rjtteofu34gs) • [Workflow](#bookmark=id.vy394u6k1s7v)
+**The ultimate tool for management, balancing, pre-processing, and AI assistance (VLM/LLM) for model training preparation (LoRA, SDXL, Flux)** [Installation](#bookmark=id.93ne4h8eoc6q) • [What's new in v3](#bookmark=id.uer02e3me5fz) • [Features](#bookmark=id.4b2b3rabed25) • [Workflow](#bookmark=id.o7c1e8yukqn)
 
-## **🎯 À propos**
+## **🎯 About**
 
-Un gestionnaire et équilibreur de datasets avancé pour la préparation d'entraînements de modèles IA **(Flux, Qwen, SDXL, LoRA)**. Conçu avec **Gradio** et propulsé par des injections JavaScript natives pour des performances optimales, cet outil permet de **visualiser, nettoyer, analyser et exporter** vos datasets d'images avec une ergonomie digne d'un logiciel de bureau.
+**IMG Dataset Refiner** (formerly *Datasets Images EditSelect*) is a "desktop-like" software suite designed for AI model creators. Powered by **Gradio** with native JavaScript injections for optimal performance, this tool allows you to **visualize, pre-process, clean, analyze via AI, and export** your image datasets with surgical precision.
 
-## **🚀 Nouveautés de la v2.0**
+## **🚀 What's New in v3.0 Pro**
 
-Cette version majeure transforme l'outil en une véritable application "desktop-like" :
+This major update transforms the tool into a true Data Engineering suite with visual and semantic analysis capabilities:
 
-* **Sélection "Façon Windows" :** Support natif de \[Ctrl+Clic\], \[Maj+Clic\] et \[Ctrl+A\] dans la galerie, avec un rendu visuel 100% JavaScript (zéro temps de chargement ou clignotement).  
-* **Éditeur de Tableau "Excel-like" :** Cliquez sur une case et tapez votre chiffre pour écraser instantanément la valeur, sans effacer au préalable.  
-* **Auto-Save Silencieux :** Vos modifications de texte sont sauvegardées automatiquement en arrière-plan lorsque vous naviguez entre les images.  
-* **Smart Swap & Drag & Drop :** Réorganisez vos recettes en glissant-déposant les lignes, ou utilisez \[Alt+Flèches\]. L'algorithme prévient les doublons de priorité de manière intelligente.  
-* **Calcul Instantané :** Les statistiques se mettent à jour en temps réel lors de votre saisie, sans besoin d'actualiser manuellement.  
-* **Export CivitAI :** Génération en un clic d'un tableau Markdown de vos statistiques, prêt à être collé sur CivitAI ou GitHub.
+* **🤖 Local AI Assistant (Ollama / LM Studio):** Connect the tool to your local LLMs and VLMs (Llama 3, Qwen-VL, LLaVA) to auto-tag, track hallucinations, isolate concepts, or translate your tags into natural language (ideal for Flux).  
+* **🖼️ Duplicate Tracking & Pre-processing:** Visual duplicate scanner (Perceptual Hashing), intelligent face cropping (OpenCV), automatic transparency (Alpha) correction, and mass resizing/renaming.  
+* **🧬 Advanced Audits:** Co-occurrence matrix (Heatmap) to spot "Concept Bleeding", resolution distribution chart (Bucketing), and logical contradiction hunter.  
+* **🪄 Native Intellisense:** The viewer now integrates an ultra-fast smart autocomplete that suggests existing tags from your dataset as you type.  
+* **Pro Interface & Onboarding:** Added contextual help menus, quick start guides, and on-the-fly language switching (FR/EN) across all advanced modules.
 
-## **📸 Galerie & Aperçu**
+*(Check the Changelog.md to review the ergonomic additions from v2.0 like Windows-style selection and auto-save).*
 
-### **🎬 Interface Principale**
+## **📸 Gallery & Preview**
 
-### **🖼️ Galerie Complète**
+### **🎬 Main Interface & Autocomplete**
 
-#### **1️⃣ Vue Gestion des Tags et Édition**
+*(Insert your screenshots here)*
 
-Interface de gestion des tags avec sélection multiple et édition batch
+### **🤖 Local AI Assistant & Profiling**
 
-#### **2️⃣ Vue Statistiques et Analyse**
+*(Insert your screenshots here)*
 
-Visualisation des statistiques avec graphiques Plotly et distribution des tags
+### **📈 Advanced Charts (Co-occurrence & Bucketing)**
 
-#### **3️⃣ Vue Assistant d'Export**
+*(Insert your screenshots here)*
 
-Assistant d'export intelligent avec simulation et stratégies d'équilibrage
+## **🌟 Main Features**
 
-#### **4️⃣ Vue Galerie Détaillée**
+### **🤖 AI Assistant (VLM & LLM)**
 
-Galerie avancée avec navigation et actions contextuelles
-
-## **🌟 Fonctionnalités Principales**
-
-### **🖼️ Galerie et Ergonomie (Interface Avancée)**
-
-| Fonctionnalité | Description |
+| Feature | Description |
 | :---- | :---- |
-| **Design UI/UX Optimisé** | Panneau latéral redimensionnable et repliable pour maximiser l'espace de travail. Mode sombre natif. |
-| **Sélection Ultra-Rapide** | \[Ctrl+Clic\], \[Maj+Clic\], \[Ctrl+A\] avec surbrillance dynamique gérée côté client. |
-| **Raccourcis Claviers Complets** | Navigation (←/→), Recherche (Ctrl+F), Sauvegarde (Ctrl+S), Stats (Alt+S), Vider (Alt+C). |
-| **Menu Contextuel Custom** | Clic droit sur l'image pour un accès rapide aux actions essentielles sans déplacer la souris. |
+| **Auto-Tagging / Super OCR** | The VLM reads the image from scratch, extracts visual details and embedded text (text: "..."). |
+| **Reality Check (Anti-Hallucination)** | The VLM verifies your existing tags and automatically removes those that are not in the image. |
+| **Concept Isolator (LoRA Special)** | The AI describes the environment but intentionally *ignores* the central subject to protect your Trigger Word. |
+| **Visual Translator (Flux/SD3)** | An LLM converts your Booru-style keyword lists into beautiful, fluent descriptive sentences. |
+| **Custom Prompt & Templates** | Create your own AI instructions and save them as "Templates". |
 
-### **👁️ Visualiseur & Édition**
+### **🖼️ Image Pre-processing & Duplicates**
 
-| Fonctionnalité | Description |
+| Feature | Description |
 | :---- | :---- |
-| **Surlignage Robuste** | Les mots-clés suivis s'illuminent en jaune dans vos captions via un moteur Regex optimisé. |
-| **Auto-Save Silencieux** | Sauvegarde transparente de vos textes lors de la navigation (avec création de .bak). |
-| **Compteur de Tokens CLIP** | Avertissement visuel en rouge si votre caption dépasse la limite habituelle (ex: \> 225 tokens). |
+| **Visual Duplicate Scanner** | Detects near-identical images (cropped, resized) via ImageHash with a tolerance slider. |
+| **Smart Face Crop** | Automatically crops the image around the face detected by OpenCV AI. |
+| **Alpha Standardization** | Spots transparent PNGs and replaces the background with white to avoid noise during training. |
+| **Batch Resize & Rename** | Resizing (Pillow), conversion (WebP/JPEG), and global folder renaming in 1 click. |
 
-### **⚡ Édition en Batch (Masse)**
+### **👁️ Gallery, Viewer & Editor**
 
-💡 **Note** : Les actions s'appliquent à tout le dataset ou uniquement à votre sélection multiple.
-
-* **Gestion des Synonymes (Expert LoRA)** : Remplacement intelligent de tags répétitifs par une liste de synonymes tournants.  
-* **Chercher/Remplacer (avec Regex)** : Support des expressions régulières pour un nettoyage en profondeur.  
-* **Nettoyage Automatique** : Suppression des virgules multiples, espaces en trop et tags en doublons.  
-* **Aperçu Avant/Après & Undo** : Visualisez les changements avec possibilité d'annuler (Undo).
-
-### **📈 Statistiques & Équilibrage**
-
-* 🎯 **Calcul Instantané** : Mises à jour des graphiques et données en temps réel lors de la saisie des mots-clés.  
-* 📊 **Visualisation Plotly** : Génération de camemberts et d'histogrammes dynamiques.  
-* 📋 **Export CivitAI / Markdown** : Bouton dédié pour copier vos statistiques proprement.  
-* 🔍 **Chasseur de Tags Orphelins** : Détecte les fautes de frappe (tags uniques).
-
-### **📁 Assistant d'Export Intelligent**
-
-Trois stratégies d'export pour tous les besoins :
-
-| Stratégie | Description |
+| Feature | Description |
 | :---- | :---- |
-| **Équilibrage Auto** | L'algorithme "Greedy" sélectionne la combinaison d'images qui se rapproche le plus de vos cibles %. |
-| **Priorité** | Remplit le dataset dans l'ordre de priorité de vos tags. |
-| **Filtre Classique** | Ne garde que les images contenant certains tags. |
+| **Ultra-Fast Selection** | \[Ctrl+Click\], \[Shift+Click\], \[Ctrl+A\] with dynamic highlighting handled client-side. |
+| **Intellisense** | Dynamic tag autocomplete during manual entry. |
+| **Custom Context Menu** | Right-click on the image for quick access to essential actions. |
+| **Batch Editing** | Regex, synonym replacement, spaces and commas cleanup on thousands of images at once. |
 
-**Bonus** : Interface de tableau Drag & Drop, Saisie express, Boutons Monter/Descendre, et Simulation visuelle d'export.
+### **📈 Statistics & Balancing**
 
-## **🚀 Installation & Lancement**
+| Feature | Description |
+| :---- | :---- |
+| **Dataset Audits** | Co-occurrence heatmap, resolutions scatter plot, and logical contradictions detection (e.g., *day* AND *night*). |
+| **"Excel-like" Table & Drag/Drop** | Drag and drop to reorganize your tag priorities instantly. |
+| **Smart Export Assistant** | "Greedy" algorithm to balance image distribution according to precise target percentages. |
 
-### **Prérequis**
+## **🚀 Installation & Launch**
+
+### **Prerequisites**
 
 * **Python 3.10+**  
+* A local AI engine (e.g., **Ollama**, **LM Studio**, or **KoboldCPP**) for the AI Assistant features.  
 * Git
 
-### **Étapes**
+### **Steps**
 
-1. **Clonez le dépôt**  
+1. **Clone the repository**  
    git clone \[https://github.com/BC8069EA84/Datasets-Images-EditSelect.git\](https://github.com/BC8069EA84/Datasets-Images-EditSelect.git)  
    cd Datasets-Images-EditSelect
 
-2. **Installez les dépendances**  
-   pip install gradio pandas plotly
+2. **Install dependencies** *(Updated for v3.0)*  
+   pip install gradio pandas plotly imagehash opencv-python requests Pillow
 
-3. **Lancez l'outil**  
+3. **Launch the tool**  
    python lora\_manager.py
 
-4. **Accédez l'interface**  
-   * L'interface s'ouvrira automatiquement dans votre navigateur par défaut (127.0.0.1).
+4. **Access the interface** The interface will automatically open in your default browser (on 127.0.0.1).
 
-## **💡 Comment ça marche ? (Workflow recommandé)**
+## **💡 How it works? (Recommended Workflow)**
 
-1️⃣  Chargez votre dossier  
-    └─ Contenant vos paires image \+ .txt
+1️⃣ **Pre-processing (🖼️ Tab)** └─ Clean visual duplicates, rename your files, and crop/resize your images in bulk.  
+2️⃣ **Artificial Intelligence (🤖 Tab)** └─ Run auto-tagging via VLM, or convert your tags to sentences via LLM if you are targeting a Flux model.  
+3️⃣ **Audit & Statistics (📈 Tab)** └─ Use the *Reality Check* and generate advanced charts to ensure no unwanted tags "bleed" onto your concept (Concept Bleeding).  
+4️⃣ **Final Cleanup & Editing (👁️ and ⚡ Tabs)** └─ Complete your tags manually with Intellisense and use the Batch Editor to fix remaining typos.  
+5️⃣ **Strategic Export (📁 Tab)** └─ Enter your target %, simulate the balance, and export a perfect dataset ready for training\!
 
-2️⃣  Analysez vos données  
-    └─ Onglet Statistiques → "Remplir avec le Top 20"
+## **📦 Project Structure**
 
-3️⃣  Définissez vos cibles  
-    └─ Assistant d'Export → Ajustez les priorités et pourcentages
+IMG-Dataset-Refiner/    
+├── lora\_manager.py          \# Main entry point (Business logic and UI)    
+├── Changelog.md             \# Update history (v2.0 & v3.0 Pro)    
+├── en.json                  \# English language dictionary    
+├── fr.json                  \# French language dictionary    
+├── lora\_recipes.json        \# Saves of your export configurations  
+├── ai\_recipes.json          \# Saves of your Custom AI prompts  
+├── README.md                \# This documentation    
+├── requirements.txt         \# Python dependencies    
+└── screenshots demo/        \# Visual demonstration
 
-4️⃣  Nettoyez & Éditez  
-    └─ Galerie → Utilisez le Mode Multi-sélection et l'Éditeur Batch
+## **🎓 Use Cases**
 
-5️⃣  Exportez votre dataset  
-    └─ Assistant d'Export → Simuler → Exporter
+✅ Preparation of demanding datasets for **LoRA fine-tuning** (SD 1.5, SDXL, Flux)  
+✅ Privacy-respecting **local auto-captioning**  
+✅ Mathematical balancing of **multi-concept** datasets  
+✅ Identification and resolution of **overfitting** issues via visual audits
 
-## **📦 Structure du Projet**
+## **📄 License**
 
-Datasets-Images-EditSelect/  
-├── lora\_manager.py          \# Point d'entrée principal (Le code métier et UI)  
-├── Changelog.md             \# Historique des mises à jour (v2.0)  
-├── en.json                  \# Dictionnaire de langue Anglaise  
-├── fr.json                  \# Dictionnaire de langue Française  
-├── readme.md                \# Cette documentation  
-├── requirements.txt         \# Dépendances Python  
-└── screenshots demo/        \# Démonstration visuelle
-
-## **🎓 Cas d'Usage**
-
-✅ Préparation de datasets pour **LoRA fine-tuning** ✅ Équilibrage de datasets **multi-concepts** ✅ Nettoyage et correction de captions en **masse** ✅ Analyse statistique de la distribution d'un dataset  
-✅ Export intelligent avec contraintes précises
-
-## **📄 Licence**
-
-Libre d'utilisation et de modification pour vos workflows d'IA.
+Free to use and modify for your AI workflows.
 
 ## **🤝 Contribution**
 
-Les contributions sont bienvenues \! N'hésitez pas à :
+Contributions are welcome\! Feel free to:
 
-* Signaler des bugs via les Issues  
-* Proposer des améliorations  
-* Soumettre des Pull Requests
+* Report bugs via Issues  
+* Propose improvements  
+* Submit Pull Requests
 
-**Fait avec ❤️ pour la communauté IA**  
-[⬆️ Retour au sommet](#bookmark=id.24dv3z72fojd)
+**Forged with ❤️ for the AI community** [⬆️ Back to top](#bookmark=id.jsyvg8l7x16z)
