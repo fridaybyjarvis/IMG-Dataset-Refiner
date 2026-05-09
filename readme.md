@@ -5,7 +5,7 @@
   <img src="https://github.com/NyxAwroo/IMG-Dataset-Refiner/raw/main/logotype/logo.jpg" alt="IMG Dataset Refiner Logo" width="250"/>
 </div>
 
-**The ultimate tool for management, balancing, pre-processing, batch editing, and AI assistance (VLM/LLM) for model training preparation (LoRA, SDXL, Flux)** [Installation](#bookmark=id.1cp2sfue8mje) • [What's new in v4.0](#bookmark=id.orop7sxzzoky) • [Features](#bookmark=id.o5ybkqotgy38) • [Workflow](#bookmark=id.rwtjzpocgan2)
+**The ultimate tool for management, balancing, pre-processing, batch editing, and AI assistance (VLM/LLM) for model training preparation (LoRA, SDXL, Flux, etc...)** [Installation](#bookmark=id.1cp2sfue8mje) • [What's new in v4.0](#bookmark=id.orop7sxzzoky) • [Features](#bookmark=id.o5ybkqotgy38) • [Workflow](#bookmark=id.rwtjzpocgan2)
 
 ## **🎯 About**
 
@@ -106,8 +106,4 @@ Contributions are welcome\! Feel free to:
 * Propose improvements  
 * Submit Pull Requests
 
-<<<<<<< HEAD
-**Forged with ❤️ for the Generative AI community.**
-=======
 **Forged with ❤️ for the AI community** [⬆️ Back to top](#bookmark=id.jsyvg8l7x16z)
->>>>>>> 4bcea8be3048364bec6ecc527ff60c2e1177a736
