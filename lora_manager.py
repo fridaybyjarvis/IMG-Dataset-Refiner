@@ -7,10 +7,22 @@ import io
 import copy
 import requests
 import base64
+import html
+import sys
+import time
+from urllib.parse import unquote, urlparse
 import plotly.express as px
 import pandas as pd
 from collections import Counter, defaultdict
 from PIL import Image
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 # Import ImageHash
 try:
@@ -38,12 +50,37 @@ except ImportError:
 # CONFIGURATION & DICTIONNAIRES DE LANGUE
 # ==========================================
 
-RECIPES_FILE = "lora_recipes.json"
-AI_RECIPES_FILE = "ai_recipes.json" 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+RECIPES_FILE = os.path.join(APP_DIR, "lora_recipes.json")
+AI_RECIPES_FILE = os.path.join(APP_DIR, "ai_recipes.json")
+FAVORITES_FILE = os.path.join(APP_DIR, "favorites.json")
+AI_SETTINGS_FILE = os.path.join(APP_DIR, "ai_settings.json")
+UI_SETTINGS_FILE = os.path.join(APP_DIR, "ui_settings.json")
+LANGUAGES_DIR = os.path.join(APP_DIR, "languages")
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
+DEFAULT_OPENAI_URL = "https://api.openai.com"
+DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com"
+DEFAULT_GEMINI_URL = "https://generativelanguage.googleapis.com"
+VALID_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.webp')
+DEFAULT_AI_SETTINGS = {
+    "api_backend": "Ollama",
+    "vlm_model": "llava",
+    "llm_model": "llama3.1",
+    "lm_studio_shared_model": "",
+    "api_url": DEFAULT_OLLAMA_URL,
+    "api_key": "",
+    "temperature": 0.7,
+    "context": 4096,
+    "system_prompt": "",
+}
 
 MSG = {"FR": {}, "EN": {}}
 UI_T = {"FR": {}, "EN": {}}
+LIVE_TRANSLATION_CACHE = {}
+DEFAULT_UI_SETTINGS = {
+    "gallery_columns": 2,
+}
 
 CONTRADICTIONS_LOGIQUES = [
     ("day", "night"), ("daytime", "night"),
@@ -52,18 +89,83 @@ CONTRADICTIONS_LOGIQUES = [
     ("1girl", "1boy"), ("monochrome", "colorful")
 ]
 
+def _resolve_lang_path(lang_code):
+    """Cherche un fichier de langue dans languages/ d'abord, puis à la racine.
+    Permet la rétro-compatibilité avec les anciennes installations."""
+    code = lang_code.lower()
+    candidate_a = os.path.join(LANGUAGES_DIR, f"{code}.json")
+    candidate_b = os.path.join(APP_DIR, f"{code}.json")
+    if os.path.exists(candidate_a):
+        return candidate_a
+    if os.path.exists(candidate_b):
+        return candidate_b
+    return None
+
 def load_languages():
-    for lang in ["FR", "EN"]:
-        filepath = f"{lang.lower()}.json"
-        if os.path.exists(filepath):
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                MSG[lang] = data.get("MSG", {})
-                UI_T[lang] = data.get("UI_T", {})
+    """Charge les langues. Scanne le dossier languages/ ET la racine.
+    Toute langue trouvée (au-delà de FR/EN) est ajoutée dynamiquement."""
+    candidates = set(["FR", "EN"])
+    # Détecter automatiquement les autres langues présentes dans languages/
+    if os.path.isdir(LANGUAGES_DIR):
+        try:
+            for f in os.listdir(LANGUAGES_DIR):
+                if f.lower().endswith(".json"):
+                    candidates.add(os.path.splitext(f)[0].upper())
+        except Exception:
+            pass
+
+    for lang in candidates:
+        filepath = _resolve_lang_path(lang)
+        if filepath:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    MSG[lang] = data.get("MSG", {})
+                    UI_T[lang] = data.get("UI_T", {})
+            except Exception as e:
+                print(f"⚠️ Erreur en lisant '{filepath}' : {e}")
         else:
-            print(f"⚠️ Fichier de langue '{filepath}' introuvable.")
+            if lang in ("FR", "EN"):
+                print(f"⚠️ Fichier de langue '{lang.lower()}.json' introuvable (cherché dans '{LANGUAGES_DIR}/' et à la racine).")
 
 load_languages()
+
+def get_available_languages():
+    """Renvoie les codes de langue disponibles (au moins FR et EN)."""
+    langs = sorted(set(["FR", "EN"]) | set(MSG.keys()))
+    return langs
+
+def import_language_file(uploaded_file, lang="FR"):
+    """Importe un fichier JSON de langue dans le dossier languages/.
+    Le fichier doit contenir MSG et UI_T comme fr.json."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not uploaded_file:
+        return "⚠️ Aucun fichier sélectionné."
+    try:
+        # Le fichier peut être un chemin ou un objet NamedString selon Gradio
+        src_path = uploaded_file.name if hasattr(uploaded_file, "name") else str(uploaded_file)
+        # Valider le JSON
+        with open(src_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if "MSG" not in data or "UI_T" not in data:
+            return "❌ Le fichier doit contenir les clés 'MSG' et 'UI_T'."
+        # Copier vers languages/ avec le nom du fichier original (en minuscules)
+        os.makedirs(LANGUAGES_DIR, exist_ok=True)
+        base_name = os.path.basename(src_path).lower()
+        if not base_name.endswith(".json"):
+            base_name += ".json"
+        dest_path = os.path.join(LANGUAGES_DIR, base_name)
+        shutil.copy2(src_path, dest_path)
+        lang_code = os.path.splitext(base_name)[0].upper()
+        # Recharger les langues pour prendre en compte la nouveauté
+        load_languages()
+        msg = m.get("lang_imported", "✅ Langue '{name}' importée avec succès. Redémarrez l'application pour la voir.").format(name=lang_code)
+        gr.Info(msg)
+        return msg
+    except json.JSONDecodeError:
+        return "❌ Fichier JSON invalide."
+    except Exception as e:
+        return f"❌ Erreur d'import : {e}"
 
 # ==========================================
 # STYLES CSS NATIFS & JAVASCRIPT GLOBAL
@@ -72,16 +174,44 @@ css_code = """
 /* Suppression totale des en-têtes Gradio */
 .gradio-container header, .gradio-container-4-26-0 header, header { display: none !important; }
 footer { display: none !important; }
+html, body, gradio-app { margin: 0 !important; padding: 0 !important; background: #0b0f14 !important; }
+.gradio-container, .contain, main, .wrap { max-width: none !important; width: 100% !important; margin: 0 !important; }
+.gradio-container { padding: 8px 16px 16px 16px !important; min-height: 100vh !important; }
+.gradio-container .main.fillable, .gradio-container > .main, .gradio-container > main { max-width: none !important; padding: 0 !important; }
+#top_workspace { gap: 12px !important; align-items: flex-start !important; flex-wrap: nowrap !important; }
+#workbench_row { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 12px !important; align-items: stretch !important; }
+#workbench_row > div { min-width: 0 !important; }
+#center_panel { min-width: 420px !important; flex: 1 1 0 !important; width: auto !important; }
+#app_title h1 { font-size: 1.35rem !important; line-height: 1.15 !important; margin: 0 0 4px 0 !important; }
+#app_title p { margin: 0 0 6px 0 !important; font-size: 0.88rem !important; }
+#dataset_header, #recipe_header { min-width: 0 !important; }
 
-#left_panel { resize: horizontal; overflow-x: hidden; overflow-y: auto; width: 380px; min-width: 250px; max-width: 70vw; flex: none !important; border-right: 2px solid #374151; padding-right: 15px; transition: min-width 0.3s ease, width 0.3s ease, padding 0.3s ease, opacity 0.3s ease; }
+#left_panel { resize: horizontal; overflow-x: hidden; overflow-y: auto; width: clamp(320px, 24vw, 470px); min-width: 280px; max-width: 44vw; flex: none !important; border-right: 1px solid #374151; padding-right: 12px; transition: min-width 0.3s ease, width 0.3s ease, padding 0.3s ease, opacity 0.3s ease; }
 #left_panel.collapsed { width: 0px !important; min-width: 0px !important; padding: 0px !important; margin: 0px !important; border: none !important; opacity: 0; pointer-events: none; }
-#right_panel { width: 380px; min-width: 250px; max-width: 50vw; flex: none !important; border-left: 2px solid #374151; padding-left: 15px; overflow-y: auto; max-height: 95vh; }
+#right_panel { width: clamp(300px, 22vw, 440px); min-width: 280px; max-width: 38vw; flex: none !important; border-left: 1px solid #374151; padding-left: 12px; overflow-y: auto; max-height: calc(100vh - 260px); transition: min-width 0.3s ease, width 0.3s ease, padding 0.3s ease, opacity 0.3s ease; }
+#right_panel.collapsed { width: 0px !important; min-width: 0px !important; padding: 0px !important; margin: 0px !important; border: none !important; opacity: 0; pointer-events: none; overflow: hidden !important; }
+/* Ligne d'en-tête du centre : aligner les deux toggles (gauche/droite) horizontalement */
+#panel_toggles_row { gap: 8px !important; }
+#panel_toggles_row > div { flex: 1 1 0 !important; min-width: 0 !important; }
+#main_gallery { min-height: 520px !important; }
+@media (max-width: 1050px) {
+    #top_workspace, #workbench_row { flex-wrap: wrap !important; }
+    #left_panel, #right_panel, #center_panel { width: 100% !important; max-width: none !important; min-width: 0 !important; }
+}
 .caption-label { font-size: 14px !important; font-weight: bold !important; color: #4ade80 !important; display: none !important; }
 .custom-selected { outline: 4px solid #ff8800 !important; outline-offset: -4px !important; box-shadow: inset 0 0 20px rgba(255, 136, 0, 0.9) !important; border-radius: 8px !important; }
 .custom-selected img { filter: sepia(0.8) hue-rotate(330deg) saturate(3) !important; opacity: 0.8 !important; }
 
-#hidden_sync_input, #hidden_sync_btn, #hidden_calc_btn, #hidden_dnd_input, #hidden_dnd_btn, #hidden_tags_input { display: none !important; }
+#hidden_sync_input, #hidden_sync_btn, #hidden_calc_btn, #hidden_dnd_input, #hidden_dnd_btn, #hidden_tags_input,
+#hidden_dataset_path_input, #hidden_dataset_path_btn { display: none !important; }
 #hidden_lib_toggle_input, #hidden_lib_toggle_btn, #hidden_lib_delete_input, #hidden_lib_delete_btn { display: none !important; }
+.form:has(#hidden_sync_input), .form:has(#hidden_dnd_input), .form:has(#hidden_tags_input),
+.form:has(#hidden_dataset_path_input), .form:has(#hidden_lib_toggle_input), .form:has(#hidden_lib_delete_input) {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
 
 .gradio-dataframe tbody tr { transition: background-color 0.2s, opacity 0.2s; }
 .gradio-dataframe tbody tr[draggable="true"] { cursor: grab !important; }
@@ -105,6 +235,115 @@ footer { display: none !important; }
 }
 
 .lib-item-custom { transition: border-color 0.2s ease, background-color 0.2s ease; }
+.dataset-drop-zone { border: 1px dashed #64748b; border-radius: 6px; padding: 8px 10px; margin: 6px 0 8px 0; background: rgba(74, 222, 128, 0.06); color: #cbd5e1; font-size: 12.5px; line-height: 1.3; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+.dataset-drop-zone strong { display: block; color: #4ade80; margin-bottom: 2px; }
+.dataset-drop-zone.dragover { border-color: #4ade80; background: rgba(74, 222, 128, 0.16); color: #fff; }
+
+/* ======================================================
+   🎨 PANELS THÉMATIQUES (v4.3.2)
+   Encarts colorés semi-transparents pour regrouper visuellement
+   les zones fonctionnelles. Volontairement légers : on ne touche
+   ni au layout flex (top_workspace / workbench_row), ni aux
+   composants enfants ; on n'ajoute qu'un fond, une bordure et un
+   liseré gauche.
+   ====================================================== */
+
+/* Tronc commun : tous les panels partagent le même paddding, le même radius et la même transition douce. */
+#top_workspace > #dataset_header,
+#top_workspace > #recipe_header,
+#workbench_row > #left_panel,
+#workbench_row > #right_panel,
+.panel-purple {
+    border-radius: 10px !important;
+    padding: 10px 12px !important;
+    transition: background-color 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease !important;
+    position: relative !important;
+}
+
+/* 🟡 Jaune — Chargement du dataset */
+#top_workspace > #dataset_header {
+    background: rgba(234, 179, 8, 0.08) !important;
+    border: 1px solid rgba(234, 179, 8, 0.35) !important;
+    border-left: 4px solid #eab308 !important;
+}
+#top_workspace > #dataset_header:hover {
+    background: rgba(234, 179, 8, 0.12) !important;
+    box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.25) inset !important;
+}
+
+/* 🔵 Bleu foncé — Recette globale */
+#top_workspace > #recipe_header {
+    background: rgba(59, 130, 246, 0.07) !important;
+    border: 1px solid rgba(59, 130, 246, 0.30) !important;
+    border-left: 4px solid #3b82f6 !important;
+}
+#top_workspace > #recipe_header:hover {
+    background: rgba(59, 130, 246, 0.11) !important;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25) inset !important;
+}
+
+/* 🟢 Vert — Galerie & Sélection */
+#workbench_row > #left_panel {
+    background: rgba(34, 197, 94, 0.06) !important;
+    /* on conserve la border-right gérée plus haut comme guide visuel */
+    border: 1px solid rgba(34, 197, 94, 0.28) !important;
+    border-right: 1px solid #374151 !important;
+    border-left: 4px solid #22c55e !important;
+}
+#workbench_row > #left_panel.collapsed {
+    background: transparent !important;
+    border: none !important;
+}
+
+/* 🟦 Cyan — Bibliothèque de mots (panneau droit) */
+#workbench_row > #right_panel {
+    background: rgba(20, 184, 166, 0.06) !important;
+    border: 1px solid rgba(20, 184, 166, 0.30) !important;
+    border-left: 4px solid #14b8a6 !important;
+    /* on n'écrase pas le padding-left existant */
+    padding-left: 12px !important;
+}
+#workbench_row > #right_panel.collapsed {
+    background: transparent !important;
+    border: none !important;
+}
+
+/* 🟣 Violet — Bloc "Serveur et Modèles Locaux" dans l'onglet IA.
+   Appliqué via elem_classes="panel-purple" sur le Group Gradio. */
+.panel-purple {
+    background: rgba(168, 85, 247, 0.07) !important;
+    border: 1px solid rgba(168, 85, 247, 0.30) !important;
+    border-left: 4px solid #a855f7 !important;
+    margin-bottom: 8px !important;
+}
+.panel-purple:hover {
+    background: rgba(168, 85, 247, 0.10) !important;
+}
+
+/* Accordion "Assistant de Traduction" — léger habillage rouge
+   pour rappeler la zone rouge de la maquette image2 (volet pliable). */
+.panel-translate > .label-wrap,
+.panel-translate > button {
+    background: rgba(239, 68, 68, 0.10) !important;
+    border-left: 3px solid #ef4444 !important;
+    border-radius: 6px !important;
+}
+.panel-translate {
+    border: 1px solid rgba(239, 68, 68, 0.25) !important;
+    border-radius: 8px !important;
+}
+
+/* Sur écrans étroits (mobile / responsive), les liserés gauches restent
+   visibles mais on assouplit le padding pour éviter les débordements. */
+@media (max-width: 1050px) {
+    #top_workspace > #dataset_header,
+    #top_workspace > #recipe_header,
+    #workbench_row > #left_panel,
+    #workbench_row > #right_panel,
+    .panel-purple {
+        padding: 8px 10px !important;
+    }
+}
 """
 
 custom_js = """
@@ -123,6 +362,157 @@ function() {
         const setter = descriptor ? descriptor.set : valueSetter;
         setter.call(element, value);
         element.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function decodeDroppedPath(raw) {
+        if (!raw) return "";
+        let first = raw.split(/\\r?\\n/).map(x => x.trim()).find(x => x && !x.startsWith("#")) || "";
+        first = first.replace(/^["']|["']$/g, "");
+        if (!first) return "";
+        try {
+            if (first.toLowerCase().startsWith("file:")) {
+                const u = new URL(first);
+                let p = decodeURIComponent(u.pathname || "");
+                if (/^\\/[A-Za-z]:\\//.test(p)) p = p.slice(1);
+                return p.replace(/\\//g, "\\\\");
+            }
+        } catch(err) {}
+        return first;
+    }
+
+    function looksLikeLocalPath(path) {
+        if (!path || path === "__DROP_PATH_BLOCKED__") return false;
+        return /^[A-Za-z]:[\\\\/]/.test(path) || /^\\\\\\\\/.test(path) || path.startsWith("/") || path.startsWith("~") || path.startsWith("%");
+    }
+
+    function setDatasetDropStatus(message, isWarning=true) {
+        const status = document.getElementById('dataset_status_text');
+        if (!status) return;
+        const target = status.querySelector('.prose, .md') || status;
+        const color = isWarning ? '#fbbf24' : '#4ade80';
+        target.innerHTML = "<p style='color:" + color + "; margin:0; font-weight:600;'>" + message + "</p>";
+    }
+
+    function pushDatasetSignatureFromDrop(signature) {
+        const wrapper = document.getElementById('hidden_dataset_path_input');
+        const hiddenInput = wrapper ? wrapper.querySelector('textarea, input') : null;
+        const hiddenBtn = document.getElementById('hidden_dataset_path_btn');
+        const zone = document.getElementById('dataset_drop_zone');
+        if (hiddenInput && hiddenBtn && signature && signature.files && signature.files.length) {
+            setDatasetDropStatus(zone?.dataset?.searchingMsg || "🔎 Searching matching local folder...", false);
+            setNativeValue(hiddenInput, "__DROP_SIGNATURE__" + JSON.stringify(signature));
+            setTimeout(() => hiddenBtn.click(), 30);
+        } else {
+            setDatasetDropStatus(zone?.dataset?.blockedMsg || "⚠️ No usable local path was provided.", true);
+        }
+    }
+
+    function readDirectoryEntries(reader) {
+        return new Promise(resolve => {
+            let entries = [];
+            function readBatch() {
+                reader.readEntries(batch => {
+                    if (!batch || batch.length === 0) resolve(entries);
+                    else { entries = entries.concat(Array.from(batch)); readBatch(); }
+                }, () => resolve(entries));
+            }
+            readBatch();
+        });
+    }
+
+    async function collectEntryFiles(entry, rootName, files, maxFiles) {
+        if (!entry || files.length >= maxFiles) return;
+        if (entry.isFile) {
+            const full = (entry.fullPath || entry.name || "").replace(/^\\//, "");
+            const prefix = rootName ? rootName.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&") + "/" : "";
+            const rel = full.replace(new RegExp("^" + prefix), "");
+            files.push(rel || entry.name || full);
+            return;
+        }
+        if (entry.isDirectory) {
+            const children = await readDirectoryEntries(entry.createReader());
+            for (const child of children) {
+                if (files.length >= maxFiles) break;
+                await collectEntryFiles(child, rootName || entry.name || "", files, maxFiles);
+            }
+        }
+    }
+
+    async function buildDropSignature(dt) {
+        const items = Array.from(dt?.items || []);
+        const files = [];
+        let rootName = "";
+        for (const item of items) {
+            const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+            if (!entry) continue;
+            if (!rootName) rootName = entry.name || "";
+            await collectEntryFiles(entry, rootName, files, 160);
+        }
+        if (!files.length && dt?.files?.length) {
+            Array.from(dt.files).slice(0, 160).forEach(f => files.push(f.webkitRelativePath || f.name || ""));
+        }
+        files.sort();
+        return { rootName, files };
+    }
+
+    async function buildDropSignatureWithRetry(dt) {
+        let best = { rootName: "", files: [] };
+        for (let attempt = 0; attempt < 4; attempt++) {
+            const sig = await buildDropSignature(dt);
+            if ((sig.files?.length || 0) > (best.files?.length || 0)) best = sig;
+            if (best.rootName && best.files && best.files.length >= 2) break;
+            await new Promise(resolve => setTimeout(resolve, 120 + attempt * 180));
+        }
+        return best;
+    }
+
+    function pushDatasetPathFromDrop(raw) {
+        const path = decodeDroppedPath(raw);
+        const dirWrapper = document.getElementById('dataset_dir_input');
+        const dirInput = dirWrapper ? dirWrapper.querySelector('textarea, input') : null;
+        if (!looksLikeLocalPath(path)) {
+            return false;
+        }
+        if (dirInput) {
+            setNativeValue(dirInput, path);
+            const zone = document.getElementById('dataset_drop_zone');
+            setDatasetDropStatus(zone?.dataset?.loadingMsg || "✅ Path detected, loading dataset...", false);
+            setTimeout(() => document.getElementById('dataset_load_btn')?.click(), 120);
+            return true;
+        }
+        return false;
+    }
+
+    function setupDatasetPathDropZone() {
+        const zone = document.getElementById('dataset_drop_zone');
+        const dirWrapper = document.getElementById('dataset_dir_input');
+        const targets = [zone, dirWrapper].filter(Boolean);
+        targets.forEach(target => {
+            if (target.dataset.datasetDropSetup) return;
+            target.dataset.datasetDropSetup = "true";
+            target.addEventListener('dragenter', function(e) {
+                e.preventDefault(); e.stopPropagation();
+                if (zone) zone.classList.add('dragover');
+            });
+            target.addEventListener('dragover', function(e) {
+                e.preventDefault(); e.stopPropagation();
+                if (zone) zone.classList.add('dragover');
+            });
+            target.addEventListener('dragleave', function(e) {
+                if (!zone || zone.contains(e.relatedTarget)) return;
+                zone.classList.remove('dragover');
+            });
+            target.addEventListener('drop', async function(e) {
+                e.preventDefault(); e.stopPropagation();
+                if (zone) zone.classList.remove('dragover');
+                const dt = e.dataTransfer;
+                let raw = dt.getData('text/uri-list') || dt.getData('text/plain') || "";
+                if (!raw && dt.files && dt.files.length > 0 && dt.files[0].path) raw = dt.files[0].path;
+                if (pushDatasetPathFromDrop(raw || "__DROP_PATH_BLOCKED__")) return;
+                const signature = await buildDropSignatureWithRetry(dt);
+                pushDatasetSignatureFromDrop(signature);
+            });
+        });
     }
 
     window.clickLibToggle = function(idx) {
@@ -190,8 +580,26 @@ function() {
         document.addEventListener("click", function (e) { closeAllLists(e.target); });
     }
 
+    function installStaticTooltips() {
+        const tooltips = {
+            "ai_recipe_btn": "Analyse les captions actuelles des images chargees pour proposer une recette globale de mots-cles partages. / Uses the currently loaded image captions to suggest a shared global keyword recipe."
+        };
+        Object.entries(tooltips).forEach(([id, text]) => {
+            const wrapper = document.getElementById(id);
+            if (!wrapper) return;
+            const target = wrapper.matches('button') ? wrapper : wrapper.querySelector('button');
+            if (!target || target.dataset.nativeTooltipReady) return;
+            target.dataset.nativeTooltipReady = "true";
+            target.setAttribute("title", text);
+            target.setAttribute("aria-label", target.innerText ? target.innerText.trim() + " - " + text : text);
+        });
+    }
+
+    setupDatasetPathDropZone();
+    installStaticTooltips();
+
     const observer = new MutationObserver(() => { 
-        updateGalleryVisuals(); setupAutocomplete(); 
+        updateGalleryVisuals(); setupAutocomplete(); setupDatasetPathDropZone(); installStaticTooltips();
         const trackedWrapper = document.getElementById('tracked_words_input'); const trackedInput = trackedWrapper ? trackedWrapper.querySelector('textarea') : null;
         if (trackedInput && !trackedInput.dataset.commaListener) {
             trackedInput.dataset.commaListener = "true";
@@ -303,6 +711,7 @@ function() {
     }, true); 
 
     document.addEventListener('click', function(e) {
+        if (!e.target || !e.target.closest) return;
         // --- 1. ÉCOUTE DES CLICS DE LA BIBLIOTHÈQUE ---
         const delBtn = e.target.closest('.lib-item-delete');
         if (delBtn) {
@@ -389,12 +798,297 @@ def browse_folder():
         return folder_path if folder_path else ""
     except Exception as e: return ""
 
+def normalize_dataset_path(raw_path, allow_file_parent=True):
+    """Nettoie les chemins collés/déposés : guillemets, file://, ~, variables env.
+    Si un fichier image/txt est fourni au lieu d'un dossier, remonte à son parent."""
+    p = (raw_path or "").strip()
+    if not p:
+        return ""
+    lines = [line.strip() for line in p.splitlines() if line.strip() and not line.strip().startswith("#")]
+    p = lines[0] if lines else p
+    p = p.strip().strip('"').strip("'").rstrip(";")
+    if p.lower().startswith("file:"):
+        try:
+            parsed = urlparse(p)
+            p = unquote(parsed.path or "")
+            if os.name == "nt" and re.match(r"^/[A-Za-z]:/", p):
+                p = p[1:]
+            p = p.replace("/", os.sep)
+        except Exception:
+            p = p.replace("file:///", "").replace("file://", "")
+    p = os.path.expandvars(os.path.expanduser(p))
+    if allow_file_parent and os.path.isfile(p):
+        p = os.path.dirname(p)
+    return os.path.abspath(p) if p else ""
+
+def render_dataset_drop_zone(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    m = MSG.get(lang, MSG.get("FR", {}))
+    title = html.escape(t.get("dataset_drop_title", "Glissez un dossier ici"))
+    hint = html.escape(t.get("dataset_drop_hint", "Ou collez un chemin absolu dans le champ ci-dessus."))
+    blocked = html.escape(m.get("drop_path_blocked", "⚠️ No usable local path was provided."), quote=True)
+    loading = html.escape(m.get("drop_path_loading", "✅ Path detected, loading dataset..."), quote=True)
+    searching = html.escape(m.get("drop_path_searching", "🔎 Searching matching local folder..."), quote=True)
+    return f"<div id='dataset_drop_zone' class='dataset-drop-zone' data-blocked-msg='{blocked}' data-loading-msg='{loading}' data-searching-msg='{searching}'><strong>{title}</strong><span>{hint}</span></div>"
+
+def _safe_scandir(path):
+    try:
+        return list(os.scandir(path))
+    except Exception:
+        return []
+
+def _iter_drop_search_roots(root_name=""):
+    roots = []
+    def add(p):
+        if not p:
+            return
+        try:
+            p = os.path.abspath(os.path.expanduser(os.path.expandvars(p)))
+        except Exception:
+            return
+        if os.path.isdir(p) and p not in roots:
+            roots.append(p)
+
+    try:
+        for fav in load_favorites():
+            add(fav)
+            add(os.path.dirname(fav))
+    except Exception:
+        pass
+
+    add(os.getcwd())
+    add(os.path.join(os.getcwd(), "dataset"))
+    add(os.path.expanduser("~"))
+    add(os.environ.get("TEMP"))
+    add(os.environ.get("TMP"))
+    for sub in (
+        "pinokio",
+        os.path.join("pinokio", "api"),
+        os.path.join("pinokio", "api", "comfyui.git"),
+        os.path.join("pinokio", "api", "comfyui.git", "app"),
+        os.path.join("pinokio", "api", "comfyui.git", "app", "models"),
+        os.path.join("pinokio", "api", "comfyui.git", "app", "models", "loras"),
+        "Desktop", "Documents", "Downloads", "Pictures",
+    ):
+        add(os.path.join(os.path.expanduser("~"), sub))
+    if os.name == "nt":
+        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            add(f"{letter}:\\")
+    else:
+        add("/")
+
+    if root_name:
+        direct = []
+        for root in list(roots):
+            direct.append(os.path.join(root, root_name))
+        for p in direct:
+            add(p)
+    return roots
+
+def _likely_drop_search_roots(root_name=""):
+    roots = []
+    def add(p):
+        if not p:
+            return
+        try:
+            p = os.path.abspath(os.path.expanduser(os.path.expandvars(p)))
+        except Exception:
+            return
+        if os.path.isdir(p) and p not in roots:
+            roots.append(p)
+
+    for fav in load_favorites():
+        add(fav)
+        add(os.path.dirname(fav))
+    home = os.path.expanduser("~")
+    for sub in (
+        os.path.join("pinokio", "api", "comfyui.git", "app", "models", "loras"),
+        os.path.join("pinokio", "api", "comfyui.git", "app", "models"),
+        os.path.join("pinokio", "api"),
+        "pinokio",
+        "Documents",
+        "Downloads",
+        "Desktop",
+        "Pictures",
+    ):
+        add(os.path.join(home, sub))
+    add(os.getcwd())
+    add(os.path.join(os.getcwd(), "dataset"))
+    add(os.environ.get("TEMP"))
+    add(os.environ.get("TMP"))
+    return roots
+
+def _candidate_file_signature(directory, limit=240):
+    files = []
+    for root, dirnames, filenames in os.walk(directory):
+        dirnames[:] = [d for d in dirnames if d.lower() not in {".git", "__pycache__", "venv", "node_modules"}]
+        rel_root = os.path.relpath(root, directory)
+        for name in filenames:
+            rel = name if rel_root == "." else os.path.join(rel_root, name)
+            files.append(rel.replace("\\", "/"))
+            if len(files) >= limit:
+                return files
+    return files
+
+def _score_drop_candidate(directory, signature_files):
+    candidate_files = _candidate_file_signature(directory)
+    candidate_lower = {os.path.basename(f).lower() for f in candidate_files}
+    candidate_rel = {f.lower().replace("\\", "/") for f in candidate_files}
+    sig_rel = {str(f).lower().replace("\\", "/") for f in signature_files if f}
+    sig_names = {os.path.basename(f).lower() for f in sig_rel}
+    image_names = {n for n in sig_names if n.endswith(VALID_IMAGE_EXTENSIONS)}
+    if image_names and not any(n in candidate_lower for n in image_names):
+        return 0
+    return (len(sig_rel & candidate_rel) * 3) + len(sig_names & candidate_lower)
+
+def _walk_dirs_limited(root, timeout_at, max_dirs=12000, max_depth=12):
+    root = os.path.abspath(root)
+    stack = [(root, 0)]
+    seen = set()
+    scanned = 0
+    pruned = {"$recycle.bin", "system volume information", "windows", "program files", "program files (x86)", "programdata", ".git", "venv", "node_modules", "__pycache__"}
+    while stack and time.monotonic() <= timeout_at and scanned < max_dirs:
+        current, depth = stack.pop()
+        key = os.path.normcase(os.path.abspath(current))
+        if key in seen:
+            continue
+        seen.add(key)
+        scanned += 1
+        yield current
+        if depth >= max_depth:
+            continue
+        for entry in reversed(_safe_scandir(current)):
+            try:
+                if entry.is_dir(follow_symlinks=False) and entry.name.lower() not in pruned:
+                    stack.append((entry.path, depth + 1))
+            except Exception:
+                pass
+
+def find_dataset_dir_from_drop_signature(signature, timeout_sec=10):
+    if not isinstance(signature, dict):
+        return ""
+    root_name = (signature.get("rootName") or "").strip().strip("\\/")
+    signature_files = [f for f in signature.get("files", []) if isinstance(f, str) and f.strip()]
+    if not root_name and not signature_files:
+        return ""
+
+    start = time.monotonic()
+    best_path = ""
+    best_score = 0
+    seen = set()
+    pruned = {"$recycle.bin", "system volume information", "windows", "program files", "program files (x86)", "programdata", ".git", "venv", "node_modules", "__pycache__"}
+    expected_name = root_name.lower()
+    roots = _iter_drop_search_roots(root_name)
+    likely_roots = _likely_drop_search_roots(root_name)
+
+    def consider(path):
+        nonlocal best_path, best_score
+        if not os.path.isdir(path):
+            return
+        score = _score_drop_candidate(path, signature_files)
+        if score > best_score:
+            best_score = score
+            best_path = path
+
+    needed_score = max(3, min(12, len(signature_files)))
+
+    direct_candidates = []
+    if root_name:
+        for root in likely_roots + roots:
+            direct_candidates.append(os.path.join(root, root_name))
+    direct_candidates.extend(likely_roots)
+    direct_candidates.extend(roots)
+
+    for root in direct_candidates:
+        if time.monotonic() - start > timeout_sec:
+            break
+        if expected_name and os.path.basename(root).lower() == expected_name:
+            consider(root)
+            if best_score >= needed_score:
+                return best_path
+
+    focused_timeout = start + min(timeout_sec, 7)
+    for likely_root in likely_roots:
+        for candidate in _walk_dirs_limited(likely_root, focused_timeout, max_dirs=18000, max_depth=14):
+            if expected_name and os.path.basename(candidate).lower() != expected_name:
+                continue
+            consider(candidate)
+            if best_score >= needed_score:
+                return best_path
+        if time.monotonic() > focused_timeout:
+            break
+
+    stack = [r for r in reversed(roots) if os.path.isdir(r)]
+    scanned = 0
+    while stack and time.monotonic() - start <= timeout_sec and scanned < 45000:
+        current = stack.pop()
+        current_key = os.path.normcase(os.path.abspath(current))
+        if current_key in seen:
+            continue
+        seen.add(current_key)
+        scanned += 1
+        base = os.path.basename(current).lower()
+        if base in pruned:
+            continue
+        if expected_name and base == expected_name:
+            consider(current)
+            if best_score >= needed_score:
+                return best_path
+        for entry in _safe_scandir(current):
+            if entry.is_dir(follow_symlinks=False) and entry.name.lower() not in pruned:
+                stack.append(entry.path)
+    return best_path if best_score >= 3 else ""
+
+def set_dataset_path_from_drop(raw_path, lang):
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if isinstance(raw_path, str) and raw_path.startswith("__DROP_SIGNATURE__"):
+        try:
+            signature = json.loads(raw_path[len("__DROP_SIGNATURE__"):])
+        except Exception:
+            signature = {}
+        directory = find_dataset_dir_from_drop_signature(signature)
+        if directory:
+            msg = m.get("drop_path_detected", "✅ Path detected: {path}").format(path=directory)
+            gr.Info(msg)
+            return gr.update(value=directory), msg, f"__RESOLVED_PATH__{directory}"
+        msg = m.get("drop_path_not_resolved", "⚠️ Could not locate this dropped folder on local disks. Paste its path or add it to Favorites once.")
+        gr.Warning(msg)
+        return gr.update(), msg, ""
+    if raw_path == "__DROP_PATH_BLOCKED__":
+        msg = m.get(
+            "drop_path_blocked",
+            "⚠️ Browser security did not expose a usable local folder path. Paste the folder path or use Browse.",
+        )
+        gr.Warning(msg)
+        return gr.update(), msg, ""
+    directory = normalize_dataset_path(raw_path)
+    if directory and os.path.isdir(directory):
+        msg = m.get("drop_path_detected", "✅ Path detected: {path}").format(path=directory)
+        gr.Info(msg)
+        return gr.update(value=directory), msg, f"__RESOLVED_PATH__{directory}"
+    msg = m.get("folder_not_found", "Folder not found.")
+    gr.Warning(msg)
+    return gr.update(value=directory), msg, ""
+
+def natural_sort_key(s):
+    """Clé de tri 'naturel' (style Windows Explorer) : 'img2' < 'img10'.
+    Insensible à la casse. Découpe la chaîne en segments alphabétiques
+    et numériques, et trie chaque segment dans son type natif."""
+    if not isinstance(s, str):
+        s = str(s)
+    parts = re.split(r'(\d+)', s.lower())
+    out = []
+    for p in parts:
+        if p.isdigit():
+            out.append((1, int(p)))
+        else:
+            out.append((0, p))
+    return out
+
 def sort_dataset(dataset, order, lang, msg_no_sel, all_tags_str=""):
     if not dataset: return [], [], [], "", "{}", -1
-    if order == "Z-A":
-        dataset = sorted(dataset, key=lambda x: x['img_name'], reverse=True)
-    else:
-        dataset = sorted(dataset, key=lambda x: x['img_name'])
+    reverse = (order == "Z-A")
+    dataset = sorted(dataset, key=lambda x: natural_sort_key(x['img_name']), reverse=reverse)
     for idx, item in enumerate(dataset): item['id'] = idx
         
     gal_items = get_gallery_items(dataset, lang)
@@ -404,12 +1098,14 @@ def sort_dataset(dataset, order, lang, msg_no_sel, all_tags_str=""):
 
 def load_dataset(directory, sort_order, lang):
     msg_no_sel = MSG[lang].get("no_selection", "Aucune sélection active.")
-    if not os.path.isdir(directory): 
+    # Accepter aussi bien les chemins absolus que relatifs ; normaliser.
+    directory = normalize_dataset_path(directory)
+    if not directory or not os.path.isdir(directory):
         return [], [], [], MSG[lang].get("folder_not_found", "Dossier introuvable."), [], [], msg_no_sel, "{}", "", -1
     dataset = []
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
     idx = 0
-    for filename in sorted(os.listdir(directory)):
+    for filename in sorted(os.listdir(directory), key=natural_sort_key):
         if filename.lower().endswith(valid_extensions):
             img_path = os.path.join(directory, filename)
             txt_path = os.path.splitext(img_path)[0] + '.txt'
@@ -420,6 +1116,10 @@ def load_dataset(directory, sort_order, lang):
                 with open(txt_path, 'w', encoding='utf-8') as f: pass
             dataset.append({'id': idx, 'img_name': filename, 'img_path': img_path, 'txt_path': txt_path, 'caption': caption})
             idx += 1
+    if not dataset:
+        msg = MSG[lang].get("no_images_found", "No supported images found in this folder.")
+        gr.Warning(msg)
+        return [], [], [], msg, [], [], msg_no_sel, "{}", "", -1
     return sort_dataset(dataset, sort_order, lang, msg_no_sel, extract_all_tags(dataset))
 
 def filter_gallery(dataset, search_text, sort_order, lang):
@@ -427,8 +1127,8 @@ def filter_gallery(dataset, search_text, sort_order, lang):
     filtered = dataset
     if search_text:
         filtered = [item for item in dataset if search_text.lower() in item['caption'].lower()]
-    if sort_order == "Z-A": filtered = sorted(filtered, key=lambda x: x['img_name'], reverse=True)
-    else: filtered = sorted(filtered, key=lambda x: x['img_name'])
+    reverse = (sort_order == "Z-A")
+    filtered = sorted(filtered, key=lambda x: natural_sort_key(x['img_name']), reverse=reverse)
     return filtered, get_gallery_items(filtered, lang), [], "", "{}", -1
 
 def get_highlighted_html(caption, tracked_words_str):
@@ -546,6 +1246,355 @@ def save_recipe(name, words):
 
 def apply_recipe(name):
     return load_recipes().get(name, "")
+
+def delete_recipe(name, lang):
+    """Supprime une recette par son nom. Renvoie un dropdown mis à jour."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not name:
+        return gr.update(), m.get("recipe_not_found", "Recipe not found")
+    recipes = load_recipes()
+    if name not in recipes:
+        return gr.update(choices=list(recipes.keys())), m.get("recipe_not_found", "Recipe not found")
+    del recipes[name]
+    with open(RECIPES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(recipes, f, ensure_ascii=False, indent=2)
+    msg = m.get("recipe_deleted", "🗑️ Recipe '{name}' deleted.").format(name=name)
+    gr.Info(msg)
+    choices = list(recipes.keys())
+    new_value = choices[0] if choices else None
+    return gr.update(choices=choices, value=new_value), msg
+
+# ==========================================
+# ⭐ FAVORIS DE DATASETS (chemins persistants)
+# ==========================================
+
+def load_favorites():
+    """Charge la liste des chemins favoris depuis favorites.json. Renvoie une liste."""
+    if not os.path.exists(FAVORITES_FILE):
+        return []
+    try:
+        with open(FAVORITES_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return [p for p in data if isinstance(p, str) and p]
+        return []
+    except Exception:
+        return []
+
+def save_favorites(favs):
+    """Sauvegarde la liste des chemins favoris."""
+    try:
+        with open(FAVORITES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(favs, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"⚠️ Impossible de sauver favorites.json : {e}")
+        return False
+
+def add_favorite(current_path, lang):
+    """Ajoute le chemin courant aux favoris."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    p = normalize_dataset_path(current_path)
+    if not p:
+        gr.Warning(m.get("fav_empty_path", "⚠️ Please enter a folder path first."))
+        return gr.update(), m.get("fav_empty_path", "⚠️ Please enter a folder path first.")
+    if not os.path.isdir(p):
+        msg = m.get("folder_not_found", "❌ Folder not found.")
+        gr.Warning(msg)
+        return gr.update(choices=load_favorites()), msg
+    favs = load_favorites()
+    if p in favs:
+        gr.Info(m.get("fav_already", "ℹ️ Already a favorite."))
+        return gr.update(choices=favs, value=p), m.get("fav_already", "ℹ️ Already a favorite.")
+    favs.append(p)
+    save_favorites(favs)
+    msg = m.get("fav_added", "⭐ Favorite added: {path}").format(path=p)
+    gr.Info(msg)
+    return gr.update(choices=favs, value=p), msg
+
+def remove_favorite(current_path, lang):
+    """Retire le chemin sélectionné des favoris."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    p = (current_path or "").strip()
+    favs = load_favorites()
+    if p and p in favs:
+        favs.remove(p)
+        save_favorites(favs)
+        msg = m.get("fav_removed", "🗑️ Favorite removed.")
+        gr.Info(msg)
+        new_val = favs[0] if favs else None
+        return gr.update(choices=favs, value=new_val), msg
+    return gr.update(choices=favs), m.get("fav_empty_path", "")
+
+def pick_favorite(selected, lang):
+    """Sélectionne un favori : renvoie le chemin pour le champ dir_input."""
+    return selected or ""
+
+# ==========================================
+# 🤖 PARAMÈTRES IA PERSISTANTS
+# ==========================================
+
+def load_ai_settings():
+    """Charge les réglages IA locaux en gardant des valeurs sûres si le JSON manque."""
+    settings = DEFAULT_AI_SETTINGS.copy()
+    if not os.path.exists(AI_SETTINGS_FILE):
+        return settings
+    try:
+        with open(AI_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            for key in settings:
+                if key in data:
+                    settings[key] = data[key]
+    except Exception as e:
+        print(f"⚠️ Impossible de lire {AI_SETTINGS_FILE} : {e}")
+    return settings
+
+def load_ai_settings_for_ui():
+    settings = load_ai_settings()
+    return (
+        settings.get("api_backend", DEFAULT_AI_SETTINGS["api_backend"]),
+        settings.get("vlm_model", DEFAULT_AI_SETTINGS["vlm_model"]),
+        settings.get("llm_model", DEFAULT_AI_SETTINGS["llm_model"]),
+        settings.get("api_url", DEFAULT_AI_SETTINGS["api_url"]),
+        settings.get("api_key", DEFAULT_AI_SETTINGS["api_key"]),
+        settings.get("temperature", DEFAULT_AI_SETTINGS["temperature"]),
+        settings.get("context", DEFAULT_AI_SETTINGS["context"]),
+        settings.get("system_prompt", DEFAULT_AI_SETTINGS["system_prompt"]),
+    )
+
+def _write_ai_settings(settings):
+    try:
+        with open(AI_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Impossible de sauver {AI_SETTINGS_FILE} : {e}")
+
+def save_ai_settings(api_backend, vlm_model, llm_model, api_url, api_key, temperature, context, system_prompt):
+    settings = load_ai_settings()
+    settings.update({
+        "api_backend": api_backend or DEFAULT_AI_SETTINGS["api_backend"],
+        "vlm_model": vlm_model or "",
+        "llm_model": llm_model or "",
+        "api_url": api_url or "",
+        "api_key": api_key or "",
+        "temperature": float(temperature) if temperature not in (None, "") else DEFAULT_AI_SETTINGS["temperature"],
+        "context": int(float(context)) if context not in (None, "") else DEFAULT_AI_SETTINGS["context"],
+        "system_prompt": system_prompt or "",
+    })
+    _write_ai_settings(settings)
+
+def load_ui_settings():
+    settings = DEFAULT_UI_SETTINGS.copy()
+    if not os.path.exists(UI_SETTINGS_FILE):
+        return settings
+    try:
+        with open(UI_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            settings.update({k: data[k] for k in settings if k in data})
+    except Exception as e:
+        print(f"⚠️ Impossible de lire {UI_SETTINGS_FILE} : {e}")
+    return settings
+
+def save_ui_settings_value(key, value):
+    settings = load_ui_settings()
+    settings[key] = value
+    try:
+        with open(UI_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Impossible de sauver {UI_SETTINGS_FILE} : {e}")
+
+def update_gallery_columns(cols):
+    try:
+        cols = int(cols)
+    except Exception:
+        cols = DEFAULT_UI_SETTINGS["gallery_columns"]
+    cols = max(1, min(6, cols))
+    save_ui_settings_value("gallery_columns", cols)
+    return gr.update(columns=cols)
+
+def load_gallery_columns_for_ui():
+    cols = load_ui_settings().get("gallery_columns", DEFAULT_UI_SETTINGS["gallery_columns"])
+    try:
+        cols = int(cols)
+    except Exception:
+        cols = DEFAULT_UI_SETTINGS["gallery_columns"]
+    cols = max(1, min(6, cols))
+    return gr.update(value=cols), gr.update(columns=cols)
+
+def get_gradio_allowed_paths():
+    """Autorise Gradio à servir les images depuis les lecteurs locaux.
+    Sans cela, les chemins hors dossier de l'app sont chargés côté Python mais bloqués côté galerie."""
+    paths = {os.path.abspath(os.getcwd())}
+    if os.name == "nt":
+        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            root = f"{letter}:\\"
+            if os.path.exists(root):
+                paths.add(root)
+    else:
+        paths.add("/")
+    return sorted(paths)
+
+def get_gradio_major_version():
+    try:
+        return int(str(getattr(gr, "__version__", "4")).split(".")[0])
+    except Exception:
+        return 4
+
+# ==========================================
+# 🎯 LM STUDIO : LISTE ET CHARGEMENT AUTO DES MODÈLES
+# ==========================================
+
+def lm_studio_list_models(api_url):
+    """Liste les modèles disponibles dans LM Studio.
+    Utilise l'endpoint /api/v0/models, puis retombe sur /v1/models si besoin."""
+    url = (api_url or DEFAULT_LM_STUDIO_URL).strip()
+    if not url.startswith("http"):
+        url = "http://" + url
+    base = url.rstrip("/")
+    # Stripper d'éventuels suffixes laissés par l'utilisateur
+    for suffix in ("/v1/chat/completions", "/v1", "/api/v1/chat/completions", "/api/v1", "/api/v0/chat/completions", "/api/v0", "/api/generate", "/api/chat"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    endpoint = base + "/api/v0/models"
+    try:
+        r = requests.get(endpoint, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        models = data.get("data", []) if isinstance(data, dict) else []
+        ids = [m.get("id") for m in models if m.get("id")]
+        all_choices = list(dict.fromkeys(ids))
+        return all_choices, all_choices, None
+    except Exception as e:
+        # Endpoint v0 indisponible : tenter le /v1/models (OpenAI-compatible, plus minimal)
+        try:
+            endpoint = base + "/v1/models"
+            r = requests.get(endpoint, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            models = data.get("data", []) if isinstance(data, dict) else []
+            ids = [m.get("id") for m in models if m.get("id")]
+            all_choices = list(dict.fromkeys(ids))
+            return all_choices, all_choices, None
+        except Exception as e2:
+            return [], [], f"{e2}"
+
+def refresh_lm_studio_models(api_url, lang):
+    """Rafraîchit les listes déroulantes VLM/LLM/partagé des modèles LM Studio."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    vlms, llms, err = lm_studio_list_models(api_url)
+    if err:
+        warning = m.get("lm_studio_list_error", "⚠️ Cannot list models: {error}").format(error=err)
+        gr.Warning(warning)
+        return gr.update(choices=[]), gr.update(choices=[]), gr.update(choices=[]), warning
+    all_choices = list(dict.fromkeys(vlms + llms))  # union ordonnée, visible dans les deux listes
+    vlm_choices = all_choices
+    llm_choices = all_choices
+    return gr.update(choices=vlm_choices), gr.update(choices=llm_choices), gr.update(choices=all_choices), f"✅ {len(all_choices)} modèles trouvés."
+
+def lm_studio_load_model(model_id, api_url, lang):
+    """Demande à LM Studio de charger un modèle en mémoire (v1 REST API).
+    Retombe silencieusement si le serveur ne supporte pas /api/v1/models/load."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not model_id:
+        return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error="aucun modèle sélectionné")
+    url = (api_url or DEFAULT_LM_STUDIO_URL).strip()
+    if not url.startswith("http"):
+        url = "http://" + url
+    base = url.rstrip("/")
+    for suffix in ("/v1/chat/completions", "/v1", "/api/v1/chat/completions", "/api/v1", "/api/v0/chat/completions", "/api/v0", "/api/generate", "/api/chat"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    gr.Info(m.get("lm_studio_loading", "⏳ Loading model '{model}'...").format(model=model_id))
+    # Tentative v1
+    try:
+        r = requests.post(base + "/api/v1/models/load", json={"model": model_id}, timeout=300)
+        if r.status_code in (200, 201, 202, 204):
+            msg = m.get("lm_studio_loaded", "✅ Model '{model}' loaded in LM Studio.").format(model=model_id)
+            gr.Info(msg)
+            return msg
+    except Exception:
+        pass
+    # Tentative v0 (anciennes versions)
+    try:
+        r = requests.post(base + "/api/v0/models/load", json={"model": model_id}, timeout=300)
+        if r.status_code in (200, 201, 202, 204):
+            msg = m.get("lm_studio_loaded", "✅ Model '{model}' loaded in LM Studio.").format(model=model_id)
+            gr.Info(msg)
+            return msg
+    except Exception as e:
+        return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error=str(e))
+    # Fallback : émettre une requête de chat triviale pour forcer le chargement (compatible toutes versions)
+    try:
+        payload = {"model": model_id, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}
+        r = requests.post(base + "/v1/chat/completions", json=payload, timeout=300)
+        if r.status_code == 200:
+            msg = m.get("lm_studio_loaded", "✅ Model '{model}' loaded in LM Studio.").format(model=model_id)
+            gr.Info(msg)
+            return msg
+        return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error=f"HTTP {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error=str(e))
+
+def lm_studio_unload_model(model_id, api_url, lang):
+    """Demande à LM Studio de décharger un modèle en mémoire."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not model_id:
+        return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error="aucun modèle sélectionné")
+    url = (api_url or DEFAULT_LM_STUDIO_URL).strip()
+    if not url.startswith("http"):
+        url = "http://" + url
+    base = url.rstrip("/")
+    for suffix in ("/v1/chat/completions", "/v1", "/api/v1", "/api/v0/chat/completions", "/api/v0", "/api/generate", "/api/chat"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    gr.Info(m.get("lm_studio_unloading", "⏳ Unloading model '{model}'...").format(model=model_id))
+    payloads = [
+        ("api/v1", {"instance_id": model_id}),
+        ("api/v1", {"model": model_id}),
+        ("api/v0", {"instance_id": model_id}),
+        ("api/v0", {"model": model_id}),
+    ]
+    last_error = ""
+    for api_version, payload in payloads:
+        try:
+            r = requests.post(f"{base}/{api_version}/models/unload", json=payload, timeout=120)
+            if r.status_code in (200, 201, 202, 204):
+                msg = m.get("lm_studio_unloaded", "✅ Model '{model}' unloaded from LM Studio.").format(model=model_id)
+                gr.Info(msg)
+                return msg
+            last_error = f"HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            last_error = str(e)
+    return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error=last_error)
+
+def save_lm_studio_model_choices(vlm_choice, llm_choice, shared_choice, api_backend, api_url, api_key, temperature, context, system_prompt, lang):
+    """Sauvegarde les choix LM Studio et synchronise les champs utilisés par les actions IA."""
+    m = MSG.get(lang, MSG.get("FR", {}))
+    shared = (shared_choice or "").strip()
+    vlm = shared or (vlm_choice or "").strip()
+    llm = shared or (llm_choice or "").strip()
+    settings = load_ai_settings()
+    settings.update({
+        "api_backend": api_backend or DEFAULT_AI_SETTINGS["api_backend"],
+        "vlm_model": vlm,
+        "llm_model": llm,
+        "lm_studio_shared_model": shared,
+        "api_url": api_url or "",
+        "api_key": api_key or "",
+        "temperature": float(temperature) if temperature not in (None, "") else DEFAULT_AI_SETTINGS["temperature"],
+        "context": int(float(context)) if context not in (None, "") else DEFAULT_AI_SETTINGS["context"],
+        "system_prompt": system_prompt or "",
+    })
+    _write_ai_settings(settings)
+    msg = m.get("lm_studio_saved", "💾 LM Studio model choices saved.")
+    gr.Info(msg)
+    return gr.update(value=vlm), gr.update(value=llm), msg
 
 # ==========================================
 # 📚 NOUVEAU MODULE: BIBLIOTHÈQUE CUSTOM
@@ -684,7 +1733,7 @@ def batch_library_cb(dataset, lib_state, mode, replace_target, selected_ids, sea
     return new_dataset, filtered_dataset, history, msg, df_res, cap_disp, hl_disp, wc_disp, get_gallery_items(filtered_dataset, lang)
 
 # === TRADUCTION ===
-def translate_text(text, engine, source_lang, dest_lang, api_backend, api_url, llm_model, lang="FR"):
+def translate_text(text, engine, source_lang, dest_lang, api_backend, api_url, llm_model, lang="FR", api_key=""):
     m = MSG.get(lang, MSG["FR"])
     if not text: return ""
     if engine == "Google (Online)":
@@ -706,18 +1755,38 @@ def translate_text(text, engine, source_lang, dest_lang, api_backend, api_url, l
             return ", ".join(translated_parts)
         except Exception as e: return m.get("err_google_trans", "⚠️ Google Translate Error: {error}").format(error=str(e))
     else:
-        return call_ai_api(f"Translate the following text from {source_lang} to {dest_lang}. ONLY output the translation, nothing else.\nText: {text}", llm_model, None, api_backend, api_url, 0.3, 1024, "You are a professional translator.")
+        return call_ai_api(
+            f"Translate the following text from {source_lang} to {dest_lang}. ONLY output the translation, nothing else.\nText: {text}",
+            llm_model, None, api_backend, api_url, 0.3, 1024,
+            "You are a professional translator.", api_key=api_key
+        )
 
-def do_live_translation(caption, engine, dest_lang, api_backend, api_url, llm_model, lang):
+def do_live_translation(caption, engine, dest_lang, api_backend, api_url, llm_model, lang, api_key=""):
     if not caption: return ""
+    caption = str(caption).strip()
+    if len(caption) < 2: return ""
+    cache_key = (caption, engine, dest_lang, api_backend, api_url, llm_model, api_key)
+    if cache_key in LIVE_TRANSLATION_CACHE:
+        return LIVE_TRANSLATION_CACHE[cache_key]
     try:
-        res = translate_text(caption, engine, "auto", dest_lang, api_backend, api_url, llm_model, lang)
+        if engine == "Google (Online)":
+            m = MSG.get(lang, MSG["FR"])
+            if not HAS_TRANSLATOR:
+                return m.get("err_trans_no_install", "⚠️ Error: deep-translator is not installed.")
+            lang_map = {"auto": "auto", "fr": "fr", "es": "es", "de": "de", "it": "it", "pt": "pt", "ru": "ru", "ja": "ja", "ko": "ko", "zh-CN": "zh-CN", "en": "en"}
+            dst = lang_map.get(dest_lang, dest_lang.split(" ")[0]) if dest_lang else "en"
+            res = GoogleTranslator(source="auto", target=dst).translate(caption)
+        else:
+            res = translate_text(caption, engine, "auto", dest_lang, api_backend, api_url, llm_model, lang, api_key)
         if res and res.startswith("⚠️"): return res
+        if len(LIVE_TRANSLATION_CACHE) > 200:
+            LIVE_TRANSLATION_CACHE.clear()
+        LIVE_TRANSLATION_CACHE[cache_key] = res or ""
         return res
     except Exception as e:
         return f"Erreur: {e}"
 
-def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, engine, source_lang, api_backend, api_url, llm_model, tracked_words, lang):
+def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, engine, source_lang, api_backend, api_url, llm_model, tracked_words, lang, api_key=""):
     new_dataset = copy.deepcopy(dataset)
     new_filtered = [item for item in new_dataset if item['id'] in [x['id'] for x in filtered_dataset]]
     m = MSG.get(lang, MSG["FR"])
@@ -726,7 +1795,7 @@ def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, eng
         cap, hl_html, wc = get_updated_viewer_data(new_filtered, idx, tracked_words, lang)
         return new_dataset, new_filtered, cap, hl_html, wc, m.get("trans_no_text", "Aucun texte")
         
-    res = translate_text(caption, engine, source_lang, "en", api_backend, api_url, llm_model, lang)
+    res = translate_text(caption, engine, source_lang, "en", api_backend, api_url, llm_model, lang, api_key)
     
     if res and res.startswith("⚠️"):
         gr.Warning(res)
@@ -751,9 +1820,9 @@ def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, eng
     cap, hl_html, wc = get_updated_viewer_data(new_filtered, idx, tracked_words, lang)
     return new_dataset, new_filtered, cap, hl_html, wc, ""
 
-def trans_insert(text_to_trans, current_caption, engine, source_lang, api_backend, api_url, llm_model, lang):
+def trans_insert(text_to_trans, current_caption, engine, source_lang, api_backend, api_url, llm_model, lang, api_key=""):
     if not text_to_trans: return current_caption
-    res = translate_text(text_to_trans, engine, source_lang, "en", api_backend, api_url, llm_model, lang)
+    res = translate_text(text_to_trans, engine, source_lang, "en", api_backend, api_url, llm_model, lang, api_key)
     if res and not res.startswith("⚠️"):
         sep = ", " if current_caption and not current_caption.endswith(", ") else ""
         return current_caption + sep + res
@@ -878,7 +1947,43 @@ def batch_synonyms(dataset, target_tag, synonyms_str, selected_ids, search_text,
     cap, hl, wc = get_updated_viewer_data(filtered_dataset, current_idx, tracked_words, lang)
     return dataset, filtered_dataset, history, msg, create_preview_df(history, dataset, lang), cap, hl, wc
 
-def simulate_and_export(dataset, export_dir, config_df, is_simulation, selected_ids, strategy, max_images, lang):
+def _safe_folder_name(name):
+    name = re.sub(r'[<>:"/\\|?*]+', '_', str(name or '').strip())
+    name = re.sub(r'\s+', ' ', name).strip(' .')
+    return name or "dataset"
+
+def _format_export_suffix(pattern, number):
+    pattern = str(pattern or "").strip() or "-Sx"
+    if "{n}" in pattern:
+        try:
+            return pattern.format(n=number)
+        except Exception:
+            return f"-S{number}"
+    if "x" in pattern.lower():
+        chars = []
+        replaced = False
+        for ch in pattern:
+            if ch.lower() == "x" and not replaced:
+                chars.append(str(number))
+                replaced = True
+            else:
+                chars.append(ch)
+        return "".join(chars)
+    return f"{pattern}{number}"
+
+def _build_unique_export_dir(dataset, export_parent, suffix_pattern):
+    dataset_dir = os.path.dirname(dataset[0]['img_path']) if dataset else ""
+    dataset_name = _safe_folder_name(os.path.basename(dataset_dir) or "dataset")
+    parent = normalize_dataset_path(export_parent, allow_file_parent=False) if export_parent and str(export_parent).strip() else os.path.join(os.getcwd(), "output")
+    os.makedirs(parent, exist_ok=True)
+    for idx in range(1, 10000):
+        candidate = os.path.join(parent, dataset_name + _format_export_suffix(suffix_pattern, idx))
+        if not os.path.exists(candidate):
+            return candidate
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    return os.path.join(parent, f"{dataset_name}-{timestamp}")
+
+def simulate_and_export(dataset, export_dir, export_suffix, config_df, is_simulation, selected_ids, strategy, max_images, lang):
     if not dataset: return MSG[lang].get("no_dataset", ""), [], None, None
     if config_df is None or config_df.empty: 
         config_df = pd.DataFrame([{MSG[lang].get("df_prio", "Prio"): 1, MSG[lang].get("df_kw", "Kw"): "", MSG[lang].get("df_tgt", "Tgt"): 0}])
@@ -962,14 +2067,132 @@ def simulate_and_export(dataset, export_dir, config_df, is_simulation, selected_
         gr.Info("📊 Simulation terminée !")
         return rep, gallery_preview, p_fig, b_fig
     else:
-        if not export_dir or str(export_dir).strip() == "": export_dir = os.path.join(os.getcwd(), "output", "dataset_final")
-        if not os.path.exists(export_dir): os.makedirs(export_dir)
+        export_dir = _build_unique_export_dir(dataset, export_dir, export_suffix)
+        os.makedirs(export_dir, exist_ok=True)
         for item in to_export:
             shutil.copy2(item['img_path'], os.path.join(export_dir, item['img_name']))
             shutil.copy2(item['txt_path'], os.path.join(export_dir, os.path.basename(item['txt_path'])))
         msg = MSG[lang].get("export_success", "Success").format(count=len(to_export), dest=export_dir)
         gr.Info(f"✅ Export réussi dans {export_dir}")
         return msg, gallery_preview, p_fig, b_fig
+
+def simulate_and_clear_selection(dataset, export_dir, export_suffix, config_df, selected_ids, strategy, max_images, lang):
+    """Lance une simulation sur tout le dataset et remet la sélection galerie à zéro."""
+    status, gallery_preview, p_fig, b_fig = simulate_and_export(
+        dataset, export_dir, export_suffix, config_df, True, [], strategy, max_images, lang
+    )
+    return status, gallery_preview, p_fig, b_fig, [], MSG[lang].get("no_sel_all", "Aucune sélection (Le Batch impactera **TOUT** le dataset)."), "{}"
+
+def _caption_tags(caption):
+    tags = []
+    for raw in str(caption or "").split(","):
+        tag = re.sub(r"\s+", " ", raw).strip(" \t\r\n\"'`")
+        if tag:
+            tags.append(tag)
+    return tags
+
+def _shared_caption_candidates(dataset):
+    counts = Counter()
+    canonical = {}
+    for item in dataset or []:
+        seen = set()
+        for tag in _caption_tags(item.get("caption", "")):
+            key = tag.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            counts[key] += 1
+            canonical.setdefault(key, tag)
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], canonical.get(kv[0], kv[0])))
+    return [(canonical.get(key, key), count) for key, count in ranked]
+
+def _parse_ai_recipe_tags(ai_text, allowed_tags, limit):
+    allowed_map = {tag.lower(): tag for tag in allowed_tags}
+    cleaned = re.sub(r"```.*?```", " ", str(ai_text or ""), flags=re.S)
+    cleaned = cleaned.replace("\n", ",").replace(";", ",").replace("|", ",")
+    parts = re.split(r",|•|- |\d+\.", cleaned)
+    result = []
+    seen = set()
+    for part in parts:
+        tag = re.sub(r"^[\s:]+|[\s.]+$", "", part).strip("\"'`")
+        tag = re.sub(r"\s+", " ", tag)
+        if not tag:
+            continue
+        tag = re.sub(r"^(keywords?|mots-cl[ée]s?|tags?)\s*:\s*", "", tag, flags=re.I).strip()
+        key = tag.lower()
+        if key in allowed_map:
+            tag = allowed_map[key]
+        elif key not in allowed_map:
+            continue
+        if key not in seen:
+            result.append(tag)
+            seen.add(key)
+        if len(result) >= limit:
+            break
+    return result
+
+def auto_fill_recipe_from_ai(dataset, count, api_backend, api_url, llm_model, temp, ctx, sys_prompt, lang, api_key=""):
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not dataset:
+        msg = m.get("no_dataset", "No dataset.")
+        gr.Warning(msg)
+        return gr.update(), msg
+
+    try:
+        limit = max(1, min(100, int(float(count or 20))))
+    except Exception:
+        limit = 20
+
+    candidates = _shared_caption_candidates(dataset)
+    if not candidates:
+        msg = m.get("ai_recipe_no_tags", "⚠️ No usable caption keywords found.")
+        gr.Warning(msg)
+        return gr.update(), msg
+
+    dataset_dir = os.path.dirname(dataset[0].get("img_path", "")) if dataset else ""
+    dataset_name = os.path.basename(dataset_dir) or "dataset"
+    total = len(dataset)
+    candidate_limit = max(limit * 4, 80)
+    candidate_lines = "\n".join(
+        f"- {tag} ({count}/{total} images)" for tag, count in candidates[:candidate_limit]
+    )
+    fallback_tags = [tag for tag, _ in candidates[:limit]]
+    prompt = (
+        "Tu es un assistant expert en datasets LoRA/Flux/Stable Diffusion.\n"
+        f"Dataset: {dataset_name}\n"
+        f"Nombre d'images/captions analysees: {total}\n"
+        f"Objectif: choisir les {limit} mots-cles les plus utiles pour remplir une Recette Globale.\n"
+        "Contraintes strictes:\n"
+        "- Reponds uniquement par une liste separee par des virgules.\n"
+        "- Utilise les mots-cles candidats ci-dessous, car ils viennent de toutes les captions du dataset.\n"
+        "- Priorise les mots-cles les plus partages en commun entre les images.\n"
+        "- Inclus le trigger word/concept principal si tu le reconnais dans le nom du dataset ou dans les captions.\n"
+        "- Ne donne aucune explication.\n\n"
+        f"Mots-cles candidats avec frequence:\n{candidate_lines}"
+    )
+
+    ai_response = call_ai_api(
+        prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key
+    )
+    allowed_tags = [tag for tag, _ in candidates]
+    picked = []
+    if ai_response and not str(ai_response).startswith("Erreur API"):
+        picked = _parse_ai_recipe_tags(ai_response, allowed_tags, limit)
+    else:
+        gr.Warning(str(ai_response or m.get("error", "Error.")))
+
+    for tag in fallback_tags:
+        if len(picked) >= limit:
+            break
+        if tag.lower() not in {x.lower() for x in picked}:
+            picked.append(tag)
+
+    recipe = ", ".join(picked[:limit])
+    msg = m.get("ai_recipe_success", "✅ AI recipe generated from {count} captions: {tags} keywords.").format(
+        count=total, tags=len(picked[:limit])
+    )
+    gr.Info(msg)
+    return recipe, msg
 
 def analyze_dataset(dataset, tracked_words_str, lang):
     lang = lang or "FR"
@@ -1401,18 +2624,39 @@ def handle_stats_df_safe(new_df, state_json, current_str):
     return gr.update(), new_json, str_update
 
 def handle_drag_and_drop(dnd_data, current_df):
-    if not dnd_data or current_df is None or current_df.empty: return current_df, gr.update()
+    if not dnd_data or current_df is None or current_df.empty:
+        return current_df, "{}", gr.update()
     try:
-        old_idx, new_idx = map(int, dnd_data.split(','))
-        if old_idx < 0 or old_idx >= len(current_df) or new_idx < 0 or new_idx >= len(current_df): return current_df, gr.update()
+        rows_to_move = []
+        new_idx = -1
+        raw = str(dnd_data).strip()
+        if raw.startswith("{"):
+            payload = json.loads(raw)
+            rows_to_move = sorted({int(x) for x in payload.get("rows", [])})
+            new_idx = int(payload.get("to", -1))
+        else:
+            old_idx, new_idx = map(int, raw.split(','))
+            rows_to_move = [old_idx]
+        if not rows_to_move:
+            return current_df, current_df.to_json(orient='records'), gr.update()
+        row_count = len(current_df)
+        rows_to_move = [idx for idx in rows_to_move if 0 <= idx < row_count]
+        if not rows_to_move or new_idx < 0 or new_idx >= row_count:
+            return current_df, current_df.to_json(orient='records'), gr.update()
         df_list = current_df.to_dict('records')
-        item = df_list.pop(old_idx)
-        df_list.insert(new_idx, item)
+        moving = [df_list[idx] for idx in rows_to_move]
+        remaining = [row for idx, row in enumerate(df_list) if idx not in set(rows_to_move)]
+        insert_at = new_idx - sum(1 for idx in rows_to_move if idx < new_idx)
+        if new_idx > max(rows_to_move):
+            insert_at += 1
+        insert_at = max(0, min(len(remaining), insert_at))
+        df_list = remaining[:insert_at] + moving + remaining[insert_at:]
         new_df = pd.DataFrame(df_list)
         prio_col = "Priorité" if "Priorité" in new_df.columns else "Priority"
         new_df[prio_col] = range(1, len(new_df) + 1)
-        return new_df, df_to_tracked_words(new_df)
-    except: return current_df, gr.update()
+        return new_df, new_df.to_json(orient='records'), df_to_tracked_words(new_df)
+    except Exception:
+        return current_df, current_df.to_json(orient='records'), gr.update()
 
 def load_ai_recipes():
     if os.path.exists(AI_RECIPES_FILE):
@@ -1444,37 +2688,180 @@ def update_ai_action_desc(action):
     desc = AI_ACTION_DESCRIPTIONS.get(action, "")
     return f"<div class='ai-desc-box'>ℹ️ {desc}</div>", gr.update(visible=show_custom), gr.update(visible=show_custom)
 
-def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_prompt):
-    api_url = str(api_url).strip()
-    if not api_url.startswith("http"): api_url = "http://" + api_url
+def _normalize_api_url(api_url, default):
+    """Nettoie une URL d'API. Préfixe http:// si manquant, supprime trailing slash."""
+    api_url = (str(api_url) if api_url else "").strip()
+    if not api_url:
+        api_url = default
+    if not api_url.startswith("http"):
+        api_url = "http://" + api_url
+    if api_url.endswith("/"):
+        api_url = api_url[:-1]
+    return api_url
+
+def _backend_kind(backend):
+    """Renvoie une catégorie normalisée pour le backend choisi.
+    Catégories : 'ollama', 'openai_compat', 'anthropic', 'gemini'."""
+    if not backend:
+        return "ollama"
+    b = str(backend).lower()
+    if "ollama" in b:
+        return "ollama"
+    if "anthropic" in b or "claude" in b:
+        return "anthropic"
+    if "gemini" in b or "google" in b:
+        return "gemini"
+    # Tout le reste (LM Studio, OpenAI, OpenRouter, Groq, etc.) parle OpenAI-compatible.
+    return "openai_compat"
+
+def _safe_output_tokens(ctx, default=1024, hard_cap=2048):
+    """OpenAI-compatible max_tokens correspond à la sortie, pas à la fenêtre de contexte."""
+    try:
+        value = int(float(ctx))
+    except Exception:
+        value = default
+    if value <= 0:
+        value = default
+    return max(64, min(value, hard_cap))
+
+def _format_http_error(prefix, response, exc):
+    detail = ""
+    try:
+        if response is not None:
+            detail = response.text[:800]
+    except Exception:
+        detail = ""
+    if detail:
+        return f"{prefix}: {exc} | Réponse serveur: {detail}"
+    return f"{prefix}: {exc}"
+
+def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_prompt, api_key=""):
+    """Appelle un backend IA. Supporte Ollama, OpenAI-compatible (LM Studio inclus),
+    Anthropic Claude et Google Gemini. api_key est requis pour les services cloud."""
+    kind = _backend_kind(api_backend)
+    api_key = (api_key or "").strip()
     b64 = None
     if image_path:
-        with open(image_path, "rb") as f: b64 = base64.b64encode(f.read()).decode("utf-8")
-    if api_backend == "Ollama":
-        if not api_url.endswith("/api/generate") and not api_url.endswith("/api/chat"): api_url = api_url.rstrip("/") + "/api/generate"
-        payload = {"model": model, "prompt": prompt, "stream": False, "options": {"temperature": float(temp), "num_ctx": int(ctx)}}
-        if sys_prompt: payload["system"] = str(sys_prompt).strip()
-        if b64: payload["images"] = [b64]
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    # --- OLLAMA (local, sans clé) ---
+    if kind == "ollama":
+        url = _normalize_api_url(api_url, DEFAULT_OLLAMA_URL)
+        if not url.endswith("/api/generate") and not url.endswith("/api/chat"):
+            url = url + "/api/generate"
+        payload = {"model": model, "prompt": prompt, "stream": False,
+                   "options": {"temperature": float(temp), "num_ctx": int(ctx)}}
+        if sys_prompt:
+            payload["system"] = str(sys_prompt).strip()
+        if b64:
+            payload["images"] = [b64]
         try:
-            response = requests.post(api_url, json=payload, timeout=180)
+            response = requests.post(url, json=payload, timeout=180)
             response.raise_for_status()
             return response.json().get("response", "").strip()
-        except Exception as e: return f"Erreur API Ollama: {e}"
-    else:
-        if api_url.endswith("/"): api_url = api_url[:-1]
-        if not api_url.endswith("/v1/chat/completions"): api_url = api_url + "/v1/chat/completions"
-        messages = []
-        if sys_prompt: messages.append({"role": "system", "content": str(sys_prompt).strip()})
-        if b64: messages.append({"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]})
-        else: messages.append({"role": "user", "content": prompt})
-        payload = {"model": model, "messages": messages, "temperature": float(temp), "max_tokens": int(ctx)}
-        try:
-            response = requests.post(api_url, json=payload, timeout=180)
-            response.raise_for_status()
-            return response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-        except Exception as e: return f"Erreur API OpenAI: {e}"
+        except Exception as e:
+            return f"Erreur API Ollama: {e}"
 
-def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url, temp, ctx, sys_prompt, current_idx, tracked_words, lang):
+    # --- ANTHROPIC CLAUDE ---
+    if kind == "anthropic":
+        url = _normalize_api_url(api_url, DEFAULT_ANTHROPIC_URL)
+        if not url.endswith("/v1/messages"):
+            url = url + "/v1/messages"
+        if not api_key:
+            return "Erreur API Anthropic: clé API manquante (entrez-la dans Paramètres Avancés API)."
+        content = []
+        if b64:
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
+        content.append({"type": "text", "text": prompt})
+        payload = {
+            "model": model or "claude-sonnet-4-5",
+            "max_tokens": int(ctx) if int(ctx) > 0 else 4096,
+            "temperature": float(temp),
+            "messages": [{"role": "user", "content": content}],
+        }
+        if sys_prompt:
+            payload["system"] = str(sys_prompt).strip()
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=180)
+            response.raise_for_status()
+            data = response.json()
+            blocks = data.get("content", [])
+            return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        except Exception as e:
+            return f"Erreur API Anthropic: {e}"
+
+    # --- GOOGLE GEMINI ---
+    if kind == "gemini":
+        url = _normalize_api_url(api_url, DEFAULT_GEMINI_URL)
+        if not api_key:
+            return "Erreur API Gemini: clé API manquante (entrez-la dans Paramètres Avancés API)."
+        model_id = model or "gemini-2.5-flash"
+        endpoint = f"{url}/v1beta/models/{model_id}:generateContent?key={api_key}"
+        parts = [{"text": prompt}]
+        if b64:
+            parts.insert(0, {"inline_data": {"mime_type": "image/jpeg", "data": b64}})
+        payload = {
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {
+                "temperature": float(temp),
+                "maxOutputTokens": int(ctx) if int(ctx) > 0 else 4096,
+            },
+        }
+        if sys_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": str(sys_prompt).strip()}]}
+        try:
+            response = requests.post(endpoint, json=payload, timeout=180)
+            response.raise_for_status()
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return f"Erreur API Gemini: réponse vide ({data.get('promptFeedback', '')})"
+            parts_out = candidates[0].get("content", {}).get("parts", [])
+            return "".join(p.get("text", "") for p in parts_out).strip()
+        except Exception as e:
+            return f"Erreur API Gemini: {e}"
+
+    # --- OPENAI-COMPATIBLE (OpenAI, LM Studio, OpenRouter, Groq, ...) ---
+    if not model:
+        return "Erreur API OpenAI-compatible: aucun modèle texte n'est sélectionné."
+    url = _normalize_api_url(api_url, DEFAULT_LM_STUDIO_URL)
+    for suffix in ("/v1/chat/completions", "/v1", "/api/v1/chat/completions", "/api/v1", "/api/v0/chat/completions", "/api/v0"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+            break
+    if not url.endswith("/v1/chat/completions"):
+        url = url + "/v1/chat/completions"
+    messages = []
+    if sys_prompt:
+        messages.append({"role": "system", "content": str(sys_prompt).strip()})
+    if b64:
+        messages.append({"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+        ]})
+    else:
+        messages.append({"role": "user", "content": prompt})
+    payload = {"model": model, "messages": messages,
+               "temperature": float(temp), "max_tokens": _safe_output_tokens(ctx)}
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=180)
+        response.raise_for_status()
+        return response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    except requests.HTTPError as e:
+        return _format_http_error("Erreur API OpenAI-compatible", getattr(e, "response", response), e)
+    except Exception as e:
+        return f"Erreur API OpenAI-compatible: {e}"
+
+def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url, temp, ctx, sys_prompt, current_idx, tracked_words, lang, api_key=""):
     if not dataset: return dataset, dataset, dataset, "Dataset vide.", extract_all_tags(dataset), "", get_highlighted_html("", tracked_words), ""
     history = copy.deepcopy(dataset)
     count = 0; errors = []
@@ -1482,16 +2869,16 @@ def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt,
         if selected_ids and item['id'] not in selected_ids: continue
         current_cap = item['caption']; new_cap = current_cap; res = ""
         try:
-            if action == "Auto-Taggage / Super OCR (VLM)": res = call_ai_api("Décris cette image en détail (virgules). Ajoute le texte lu sous la forme text: \"le texte\".", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt)
-            elif action == "Reality Check & Hallucinations (VLM)": res = call_ai_api(f"Tags actuels: '{current_cap}'. Ne renvoie QUE les tags réellement présents.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt)
-            elif action == "Concept Isolator (Spécial LoRA)": res = call_ai_api("Décris l'arrière-plan et le style, NE DÉCRIS PAS le sujet principal.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt)
-            elif action == "Traducteur Visuel (Booru ↔ Phrase Naturelle)": res = call_ai_api(f"Transforme en phrase anglaise fluide pour Flux : {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt)
-            elif action == "Traduction Automatique (Vers Anglais)": res = call_ai_api(f"Translate into English, keep comma format: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt)
-            elif action == "Tag Sorting & Standardisation": res = call_ai_api(f"Ordonne (Sujet, Vêtements, Fond) et corrige: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt)
+            if action == "Auto-Taggage / Super OCR (VLM)": res = call_ai_api("Décris cette image en détail (virgules). Ajoute le texte lu sous la forme text: \"le texte\".", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+            elif action == "Reality Check & Hallucinations (VLM)": res = call_ai_api(f"Tags actuels: '{current_cap}'. Ne renvoie QUE les tags réellement présents.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+            elif action == "Concept Isolator (Spécial LoRA)": res = call_ai_api("Décris l'arrière-plan et le style, NE DÉCRIS PAS le sujet principal.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+            elif action == "Traducteur Visuel (Booru ↔ Phrase Naturelle)": res = call_ai_api(f"Transforme en phrase anglaise fluide pour Flux : {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+            elif action == "Traduction Automatique (Vers Anglais)": res = call_ai_api(f"Translate into English, keep comma format: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+            elif action == "Tag Sorting & Standardisation": res = call_ai_api(f"Ordonne (Sujet, Vêtements, Fond) et corrige: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
             elif action == "✨ Prompt Personnalisé (Texte/Vision)":
                 model_to_use = vlm_model if use_vision_for_custom else llm_model
                 img_path_to_use = item['img_path'] if use_vision_for_custom else None
-                res = call_ai_api(custom_prompt.replace("{tags}", current_cap), model_to_use, img_path_to_use, api_backend, api_url, temp, ctx, sys_prompt)
+                res = call_ai_api(custom_prompt.replace("{tags}", current_cap), model_to_use, img_path_to_use, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
             
             if res.startswith("Erreur API"): errors.append(item['img_name']); gr.Warning(res); continue
             if injection_mode == "Remplacer tout" or action != "✨ Prompt Personnalisé (Texte/Vision)": new_cap = res
@@ -1509,10 +2896,73 @@ def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt,
     cap, hl, wc = get_updated_viewer_data(filtered_dataset, current_idx, tracked_words, lang)
     return dataset, filtered_dataset, history, msg, extract_all_tags(dataset), cap, hl, wc
 
-def analyze_bias(dataset, llm_model, api_backend, api_url, temp, ctx, sys_prompt):
-    if not dataset: return "Aucun dataset."
-    all_caps = " | ".join([it['caption'] for it in dataset[:50]]) 
-    return call_ai_api(f"Tu es un expert en entraînement IA. Échantillon de mon dataset : {all_caps}. Bref rapport des biais potentiels (poses, diversité) et conseils.", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt)
+def _split_caption_tags(caption):
+    return [tag.strip() for tag in str(caption or "").split(",") if tag.strip()]
+
+def _build_bias_profile(dataset, sample_size=30):
+    total = len(dataset)
+    caps = [str(item.get("caption", "")).strip() for item in dataset]
+    non_empty_caps = [cap for cap in caps if cap]
+    tag_lists = [_split_caption_tags(cap) for cap in non_empty_caps]
+    tag_counts = Counter(tag for tags in tag_lists for tag in tags)
+    per_image_counts = [len(tags) for tags in tag_lists]
+    avg_tags = (sum(per_image_counts) / len(per_image_counts)) if per_image_counts else 0
+    top_tags = tag_counts.most_common(35)
+    rare_tags = [(tag, count) for tag, count in tag_counts.items() if count == 1][:35]
+    empty_count = total - len(non_empty_caps)
+    samples = []
+    if non_empty_caps:
+        step = max(1, len(non_empty_caps) // sample_size)
+        samples = non_empty_caps[::step][:sample_size]
+    return {
+        "total_images": total,
+        "captioned_images": len(non_empty_caps),
+        "empty_captions": empty_count,
+        "unique_tags": len(tag_counts),
+        "avg_tags_per_caption": round(avg_tags, 1),
+        "top_tags": top_tags,
+        "rare_tags": rare_tags,
+        "caption_samples": samples,
+    }
+
+def analyze_bias(dataset, llm_model, api_backend, api_url, temp, ctx, sys_prompt, lang="FR", api_key=""):
+    if not dataset:
+        return MSG.get(lang, MSG.get("FR", {})).get("no_dataset", "Aucun dataset.")
+    profile = _build_bias_profile(dataset)
+    output_lang = "français" if lang == "FR" else "English"
+    top_tags = ", ".join([f"{tag} ({count})" for tag, count in profile["top_tags"][:30]])
+    rare_tags = ", ".join([tag for tag, _ in profile["rare_tags"][:25]])
+    caption_samples = "\n".join([f"- {cap[:260]}" for cap in profile["caption_samples"]])
+    prompt = f"""
+Tu es un expert senior en préparation de datasets pour Stable Diffusion, Flux et entraînement LoRA.
+Analyse ce dataset à partir de ses captions réelles. Réponds en {output_lang}, de façon concrète et actionnable.
+
+Résumé quantitatif:
+- Images: {profile['total_images']}
+- Captions non vides: {profile['captioned_images']}
+- Captions vides: {profile['empty_captions']}
+- Tags uniques: {profile['unique_tags']}
+- Moyenne de tags par caption: {profile['avg_tags_per_caption']}
+
+Tags les plus fréquents:
+{top_tags or "Aucun"}
+
+Tags rares ou potentiellement isolés:
+{rare_tags or "Aucun"}
+
+Échantillon représentatif des captions:
+{caption_samples}
+
+Produit un rapport structuré avec ces sections:
+1. Diagnostic rapide: ce que le dataset semble apprendre en priorité.
+2. Biais probables: sujet, pose, cadrage, style, fond, lumière, vêtements/objets, vocabulaire répétitif.
+3. Risques pour un LoRA: surapprentissage, trigger trop faible, tags contradictoires, tags trop génériques, manque de diversité.
+4. Corrections prioritaires: actions concrètes à faire dans les captions ou dans le tri des images.
+5. Tags à surveiller: liste courte des tags à fusionner, supprimer, renforcer ou renommer.
+
+Ne reste pas générique: appuie chaque remarque sur les tags ou captions fournis. Si une information manque, indique comment la vérifier dans l'outil.
+""".strip()
+    return call_ai_api(prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
 
 # ==========================================
 # GESTION DYNAMIQUE DU CHANGEMENT DE LANGUE
@@ -1546,8 +2996,10 @@ def change_language(lang, stats_df, config_df, lib_state):
 
     return (
         gr.update(value=t.get("title", "")),
+        gr.update(label=t.get("settings_title", "⚙️ Paramètres")),
         gr.update(label=t.get("guide_title", "")),
         gr.update(value=t.get("guide_text", "")),
+        gr.update(value=render_dataset_drop_zone(lang)),
         gr.update(value=t.get("browse", "")),
         gr.update(value=t.get("load", "")),
         gr.update(value=t.get("status_wait", "")),
@@ -1557,6 +3009,9 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("recipe_name", "")),
         gr.update(value=t.get("save_recipe", "")),
         gr.update(placeholder=t.get("tracked_ph", "")),
+        gr.update(label=t.get("ai_recipe_count", "Nombre de mots-clés IA")),
+        gr.update(value=t.get("btn_ai_recipe", "🤖 Remplir par IA")),
+        gr.update(value=t.get("btn_analyze_recipe", "📊 Lancer l'analyse des données")),
         
         gr.update(value=t.get("gallery_title", "")),
         gr.update(label=t.get("search", ""), placeholder=t.get("search_ph", "")),
@@ -1646,6 +3101,7 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("strat", ""), choices=t.get("strat_choices", [])),
         gr.update(label=t.get("max_img", "")),
         gr.update(label=t.get("dest_folder", ""), placeholder=t.get("dest_ph", "")),
+        gr.update(label=t.get("export_suffix", "Suffixe d'export"), placeholder=t.get("export_suffix_ph", "-Sx → -S1, -S2, -S3...")),
         gr.update(value=t.get("btn_simul", "")),
         gr.update(value=t.get("btn_exp", "")),
         gr.update(label=lbl_pie),
@@ -1660,9 +3116,16 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=lbl_pie),
         gr.update(label=lbl_bar),
         gr.update(value=t.get("adv_stats_title", "")),
+        gr.update(value=t.get("adv_stats_help", "")),
         gr.update(value=t.get("btn_calc_adv", "")),
+        gr.update(label=t.get("adv_heatmap_label", "Matrice")),
+        gr.update(value=t.get("adv_heatmap_help", "")),
+        gr.update(label=t.get("adv_bucket_label", "Résolutions")),
+        gr.update(value=t.get("adv_bucket_help", "")),
         gr.update(label=t.get("anti_title", "")),
+        gr.update(value=t.get("anti_help", "")),
         gr.update(label=t.get("contra_title", "")),
+        gr.update(value=t.get("contra_help", "")),
         
         gr.update(value=t.get("lib_title", "")),
         gr.update(label=t.get("lib_mode", ""), choices=[m_add, m_rem, m_rep], value=m_add),
@@ -1673,14 +3136,43 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(value=t.get("btn_uncheck_all", "")),
         gr.update(value=t.get("btn_clear_lib", "")),
         gr.update(value=t.get("lib_list_title", "")),
-        gr.update(value=render_lib_html(lib_state, lang))
+        gr.update(value=render_lib_html(lib_state, lang)),
+
+        # ⭐ Favoris + 🌐 Import langue + 🗑️ Suppression recette + 🎯 LM Studio + 🔑 API Key
+        gr.update(label=t.get("fav_section_title", "")),
+        gr.update(label=t.get("fav_dropdown", "")),
+        gr.update(value=t.get("btn_add_fav", "")),
+        gr.update(value=t.get("btn_remove_fav", "")),
+        gr.update(label=t.get("lang_import_acc", "")),
+        gr.update(value=t.get("lang_import_info", "")),
+        gr.update(label=t.get("lang_import_file", "")),
+        gr.update(value=t.get("lang_import_btn", "")),
+        gr.update(value=t.get("btn_delete_recipe", "")),
+        gr.update(label=t.get("sort_label", "")),
+        gr.update(label=t.get("api_key_input", "")),
+        gr.update(label=t.get("lm_studio_acc", "")),
+        gr.update(value=t.get("lm_studio_list_btn", "")),
+        gr.update(label=t.get("lm_studio_vlm_dd", "")),
+        gr.update(label=t.get("lm_studio_llm_dd", "")),
+        gr.update(label=t.get("lm_studio_shared_dd", "")),
+        gr.update(value=t.get("lm_studio_load_vlm", "")),
+        gr.update(value=t.get("lm_studio_load_llm", "")),
+        gr.update(value=t.get("lm_studio_load_shared", "")),
+        gr.update(value=t.get("lm_studio_unload_vlm", "")),
+        gr.update(value=t.get("lm_studio_unload_llm", "")),
+        gr.update(value=t.get("lm_studio_unload_shared", "")),
+        gr.update(value=t.get("lm_studio_save_choices", "")),
     )
 
 # ==========================================
 # INTERFACE GRADIO
 # ==========================================
 
-with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
+blocks_kwargs = {"title": "IMG Dataset Refiner v4.3 Pro"}
+if get_gradio_major_version() < 6:
+    blocks_kwargs["css"] = css_code
+
+with gr.Blocks(**blocks_kwargs) as app:
     
     dataset_state = gr.State([])
     filtered_state = gr.State([])
@@ -1705,6 +3197,8 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_hidden_dnd_input = gr.Textbox(elem_id="hidden_dnd_input")
     ui_hidden_dnd_btn = gr.Button(elem_id="hidden_dnd_btn")
     ui_hidden_tags_input = gr.Textbox(elem_id="hidden_tags_input")
+    ui_hidden_dataset_path_input = gr.Textbox(elem_id="hidden_dataset_path_input")
+    ui_hidden_dataset_path_btn = gr.Button(elem_id="hidden_dataset_path_btn")
     
     # Inputs cachés pour le module Custom Library
     ui_hidden_lib_toggle_input = gr.Textbox(elem_id="hidden_lib_toggle_input")
@@ -1713,48 +3207,89 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_hidden_lib_delete_btn = gr.Button(elem_id="hidden_lib_delete_btn")
     
     t_init = UI_T.get("FR", {})
+    ai_settings_init = load_ai_settings()
+    ui_settings_init = load_ui_settings()
 
-    with gr.Row():
-        with gr.Column(scale=2):
-            lang_radio = gr.Radio(["FR", "EN"], value="FR", label="Language / Langue")
-            ui_title = gr.Markdown(t_init.get("title", ""))
-            
-            ui_guide_acc = gr.Accordion(t_init.get("guide_title", ""), open=False)
-            with ui_guide_acc:
-                ui_guide_text = gr.Markdown(t_init.get("guide_text", ""))
+    with gr.Row(elem_id="top_workspace"):
+        with gr.Column(scale=2, elem_id="dataset_header"):
+            ui_title = gr.Markdown(t_init.get("title", ""), elem_id="app_title")
+
+            ui_settings_acc = gr.Accordion(t_init.get("settings_title", "⚙️ Paramètres"), open=False)
+            with ui_settings_acc:
+                lang_radio = gr.Radio(get_available_languages(), value="FR", label="Language / Langue")
+                ui_guide_acc = gr.Accordion(t_init.get("guide_title", ""), open=False)
+                with ui_guide_acc:
+                    ui_guide_text = gr.Markdown(t_init.get("guide_text", ""))
+                ui_lang_import_acc = gr.Accordion(t_init.get("lang_import_acc", "🌐 Import langue"), open=False)
+                with ui_lang_import_acc:
+                    ui_lang_import_info = gr.Markdown(t_init.get("lang_import_info", ""))
+                    ui_lang_import_file = gr.File(label=t_init.get("lang_import_file", "JSON file"),
+                                                  file_types=[".json"], file_count="single", type="filepath")
+                    ui_lang_import_btn = gr.Button(t_init.get("lang_import_btn", "📥 Importer"), variant="secondary")
+                    ui_lang_import_status = gr.Markdown()
             
             with gr.Row():
-                dir_input = gr.Textbox(placeholder="C:\\mon\\dataset", show_label=False, scale=4)
+                dir_input = gr.Textbox(placeholder="C:\\mon\\dataset, D:\\autre\\concept, ~/datasets/portrait, ...", show_label=False, scale=4, elem_id="dataset_dir_input")
                 ui_browse_btn = gr.Button(t_init.get("browse", ""), scale=1)
-            ui_load_btn = gr.Button(t_init.get("load", ""), variant="primary")
-            ui_status_text = gr.Markdown(t_init.get("status_wait", ""))
+            ui_dataset_drop_zone = gr.HTML(render_dataset_drop_zone("FR"))
+            ui_load_btn = gr.Button(t_init.get("load", ""), variant="primary", elem_id="dataset_load_btn")
+            ui_status_text = gr.Markdown(t_init.get("status_wait", ""), elem_id="dataset_status_text")
             
-        with gr.Column(scale=3):
+            # ⭐ Section Favoris — placée ici car il s'agit d'une méthode
+            # d'importation de dataset (chargement rapide via favoris).
+            _init_favs = load_favorites()
+            ui_fav_section_title = gr.Accordion(t_init.get("fav_section_title", "⭐ Favoris"), open=False)
+            with ui_fav_section_title:
+                with gr.Row():
+                    ui_fav_dropdown = gr.Dropdown(choices=_init_favs, value=(_init_favs[0] if _init_favs else None),
+                                                   label=t_init.get("fav_dropdown", "Charger un favori"),
+                                                   scale=3, interactive=True, allow_custom_value=False)
+                with gr.Row():
+                    ui_btn_add_fav = gr.Button(t_init.get("btn_add_fav", "⭐ Ajouter aux favoris"), size="sm", scale=1)
+                    ui_btn_remove_fav = gr.Button(t_init.get("btn_remove_fav", "🗑️ Retirer ce favori"),
+                                                    variant="stop", size="sm", scale=1)
+            
+        with gr.Column(scale=3, elem_id="recipe_header"):
             ui_recipe_global = gr.Markdown(t_init.get("recipe_global", ""))
             with gr.Row():
                 ui_recipes_dropdown = gr.Dropdown(choices=list(load_recipes().keys()), label=t_init.get("recipes_dd", ""), scale=2)
                 ui_recipe_name = gr.Textbox(label=t_init.get("recipe_name", ""), scale=1)
                 ui_save_recipe_btn = gr.Button(t_init.get("save_recipe", ""), scale=1)
+            with gr.Row():
+                ui_btn_delete_recipe = gr.Button(t_init.get("btn_delete_recipe", "🗑️ Supprimer cette recette"),
+                                                  variant="stop", size="sm")
             ui_tracked_words = gr.Textbox(show_label=False, placeholder=t_init.get("tracked_ph", ""), lines=2, elem_id="tracked_words_input")
+            with gr.Row():
+                ui_ai_recipe_count = gr.Number(
+                    value=20, precision=0,
+                    label=t_init.get("ai_recipe_count", "Nombre de mots-clés IA"),
+                    scale=1,
+                )
+                ui_btn_ai_recipe = gr.Button(
+                    t_init.get("btn_ai_recipe", "🤖 Remplir par IA"),
+                    variant="secondary", size="sm", scale=2, elem_id="ai_recipe_btn",
+                )
+            ui_btn_analyze_recipe = gr.Button(t_init.get("btn_analyze_recipe", "📊 Lancer l'analyse des données"), variant="secondary", size="sm", elem_id="analyze_recipe_btn")
 
-    gr.Markdown("---")
-    
-    with gr.Row():
+    with gr.Row(elem_id="workbench_row"):
         with gr.Column(scale=0, elem_id="left_panel") as left_panel:
             ui_gallery_title = gr.Markdown(t_init.get("gallery_title", ""))
             ui_search_box = gr.Textbox(label=t_init.get("search", ""), placeholder=t_init.get("search_ph", ""))
-            ui_sort_order = gr.Radio(["A-Z", "Z-A"], value="A-Z", label="Trier / Sort")
+            ui_sort_order = gr.Radio(["A-Z", "Z-A"], value="A-Z", label=t_init.get("sort_label", "Trier / Sort"))
             
             with gr.Row():
                 ui_multi_select_cb = gr.Checkbox(label=t_init.get("multi_cb", ""), value=False, interactive=True, elem_id="multi_cb", scale=2)
                 ui_clear_sel_btn = gr.Button(t_init.get("clear_sel", ""), elem_id="clear_sel_btn", scale=1)
                 
             ui_selection_status = gr.Markdown("**...**")
-            ui_gallery_cols = gr.Slider(minimum=1, maximum=6, step=1, value=2, label=t_init.get("cols", ""), interactive=True)
-            gallery = gr.Gallery(label="Dataset", columns=2, rows=6, height=750, object_fit="contain", allow_preview=False, elem_id="main_gallery")
+            initial_gallery_cols = int(ui_settings_init.get("gallery_columns", DEFAULT_UI_SETTINGS["gallery_columns"]))
+            ui_gallery_cols = gr.Slider(minimum=1, maximum=6, step=1, value=initial_gallery_cols, label=t_init.get("cols", ""), interactive=True)
+            gallery = gr.Gallery(label="Dataset", columns=initial_gallery_cols, rows=6, height=750, object_fit="contain", allow_preview=False, elem_id="main_gallery")
             
-        with gr.Column(scale=1):
-            ui_toggle_panel_btn = gr.Button(t_init.get("hide_gal", ""), elem_id="toggle_gallery_btn", variant="secondary", size="sm")
+        with gr.Column(scale=1, elem_id="center_panel"):
+            with gr.Row(elem_id="panel_toggles_row"):
+                ui_toggle_panel_btn = gr.Button(t_init.get("hide_gal", ""), elem_id="toggle_gallery_btn", variant="secondary", size="sm")
+                ui_toggle_right_btn = gr.Button(t_init.get("hide_lib", "Masquer la Bibliothèque ▶"), elem_id="toggle_right_btn", variant="secondary", size="sm")
             
             with gr.Tabs():
                 ui_tab_view = gr.Tab(t_init.get("tab_view", ""))
@@ -1777,8 +3312,8 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                     ui_save_single_btn = gr.Button(t_init.get("save_cap", ""), variant="primary", elem_id="save_single_btn")
                     ui_single_save_status = gr.Markdown()
                     
-                    with gr.Group():
-                        ui_trans_module_title = gr.Markdown(t_init.get("trans_module_title", ""))
+                    with gr.Accordion(t_init.get("trans_module_title", "🌍 Assistant de Traduction"), open=False, elem_classes="panel-translate") as ui_trans_module_acc:
+                        ui_trans_module_title = gr.Markdown(visible=False)
                         with gr.Row():
                             with gr.Column(scale=2):
                                 ui_trans_engine = gr.Radio(["Google (Online)", "IA Locale (Ollama/LM Studio)"], label=t_init.get("trans_engine", ""), value="Google (Online)")
@@ -1838,16 +3373,77 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                 ui_tab_ai = gr.Tab(t_init.get("tab_ai", ""))
                 with ui_tab_ai:
                     with gr.Row():
-                        with gr.Column(scale=1):
+                        with gr.Column(scale=1, elem_classes="panel-purple"):
                             ui_ai_conf_title = gr.Markdown(t_init.get("ai_conf_title", ""))
-                            api_backend = gr.Radio(["Ollama", "API OpenAI / LM Studio (GGUF locaux)"], label=t_init.get("api_backend", ""), value="Ollama")
-                            vlm_model = gr.Textbox(value="llava", label=t_init.get("vlm_model", ""))
-                            llm_model = gr.Textbox(value="llama3.1", label=t_init.get("llm_model", ""))
+                            api_backend = gr.Radio(
+                                [
+                                    "Ollama",
+                                    "API OpenAI / LM Studio (GGUF locaux)",
+                                    "Anthropic Claude (Cloud)",
+                                    "Google Gemini (Cloud)",
+                                ],
+                                label=t_init.get("api_backend", ""),
+                                value=ai_settings_init.get("api_backend", DEFAULT_AI_SETTINGS["api_backend"]),
+                            )
+                            vlm_model = gr.Textbox(value=ai_settings_init.get("vlm_model", DEFAULT_AI_SETTINGS["vlm_model"]), label=t_init.get("vlm_model", ""))
+                            llm_model = gr.Textbox(value=ai_settings_init.get("llm_model", DEFAULT_AI_SETTINGS["llm_model"]), label=t_init.get("llm_model", ""))
                             with gr.Accordion(t_init.get("ai_adv_acc", ""), open=False) as ui_ai_adv_acc:
-                                api_url_input = gr.Textbox(value=DEFAULT_OLLAMA_URL, label=t_init.get("api_url_input", ""))
-                                ai_temp = gr.Slider(minimum=0.0, maximum=2.0, value=0.7, step=0.1, label=t_init.get("ai_temp", ""))
-                                ai_ctx = gr.Number(value=4096, label=t_init.get("ai_ctx", ""))
-                                ai_sys = gr.Textbox(label=t_init.get("ai_sys", ""), lines=2)
+                                api_url_input = gr.Textbox(value=ai_settings_init.get("api_url", DEFAULT_AI_SETTINGS["api_url"]), label=t_init.get("api_url_input", ""))
+                                api_key_input = gr.Textbox(
+                                    value=ai_settings_init.get("api_key", DEFAULT_AI_SETTINGS["api_key"]), label=t_init.get("api_key_input", "API Key (cloud services)"),
+                                    type="password",
+                                    placeholder="sk-..., AIza..., ...",
+                                )
+                                ai_temp = gr.Slider(minimum=0.0, maximum=2.0, value=ai_settings_init.get("temperature", DEFAULT_AI_SETTINGS["temperature"]), step=0.1, label=t_init.get("ai_temp", ""))
+                                ai_ctx = gr.Number(value=ai_settings_init.get("context", DEFAULT_AI_SETTINGS["context"]), label=t_init.get("ai_ctx", ""))
+                                ai_sys = gr.Textbox(value=ai_settings_init.get("system_prompt", DEFAULT_AI_SETTINGS["system_prompt"]), label=t_init.get("ai_sys", ""), lines=2)
+
+                            # 🎯 LM Studio : Chargement automatique des modèles favoris
+                            ui_lm_studio_acc = gr.Accordion(t_init.get("lm_studio_acc", "🎯 LM Studio: Auto-Load"), open=False)
+                            with ui_lm_studio_acc:
+                                ui_lm_studio_list_btn = gr.Button(
+                                    t_init.get("lm_studio_list_btn", "🔄 Refresh models list"),
+                                    size="sm",
+                                )
+                                ui_lm_studio_vlm_dd = gr.Dropdown(
+                                    choices=[], label=t_init.get("lm_studio_vlm_dd", "VLM"),
+                                    value=ai_settings_init.get("vlm_model", DEFAULT_AI_SETTINGS["vlm_model"]),
+                                    allow_custom_value=True, interactive=True,
+                                )
+                                ui_lm_studio_llm_dd = gr.Dropdown(
+                                    choices=[], label=t_init.get("lm_studio_llm_dd", "LLM"),
+                                    value=ai_settings_init.get("llm_model", DEFAULT_AI_SETTINGS["llm_model"]),
+                                    allow_custom_value=True, interactive=True,
+                                )
+                                ui_lm_studio_shared_dd = gr.Dropdown(
+                                    choices=[], label=t_init.get("lm_studio_shared_dd", "Same model for VLM + LLM"),
+                                    value=ai_settings_init.get("lm_studio_shared_model", DEFAULT_AI_SETTINGS["lm_studio_shared_model"]),
+                                    allow_custom_value=True, interactive=True,
+                                )
+                                with gr.Row():
+                                    ui_lm_studio_load_vlm = gr.Button(
+                                        t_init.get("lm_studio_load_vlm", "⚡ Load VLM"), size="sm",
+                                    )
+                                    ui_lm_studio_load_llm = gr.Button(
+                                        t_init.get("lm_studio_load_llm", "⚡ Load LLM"), size="sm",
+                                    )
+                                    ui_lm_studio_load_shared = gr.Button(
+                                        t_init.get("lm_studio_load_shared", "⚡ Load shared model"), size="sm",
+                                    )
+                                with gr.Row():
+                                    ui_lm_studio_unload_vlm = gr.Button(
+                                        t_init.get("lm_studio_unload_vlm", "🧹 Unload VLM"), size="sm",
+                                    )
+                                    ui_lm_studio_unload_llm = gr.Button(
+                                        t_init.get("lm_studio_unload_llm", "🧹 Unload LLM"), size="sm",
+                                    )
+                                    ui_lm_studio_unload_shared = gr.Button(
+                                        t_init.get("lm_studio_unload_shared", "🧹 Unload shared"), size="sm",
+                                    )
+                                ui_lm_studio_save_choices = gr.Button(
+                                    t_init.get("lm_studio_save_choices", "💾 Save model choices"), size="sm", variant="secondary",
+                                )
+                                ui_lm_studio_status = gr.Markdown(label=t_init.get("lm_studio_status", "LM Studio Status"))
                         with gr.Column(scale=2):
                             ui_ai_act_title = gr.Markdown(t_init.get("ai_act_title", ""))
                             ai_action_dropdown = gr.Dropdown([
@@ -1891,10 +3487,11 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                                 ui_quick_prio = gr.Dropdown(label=t_init.get("quick_prio", ""), choices=[str(i) for i in range(1, 101)], allow_custom_value=True, scale=1)
                                 ui_quick_target = gr.Number(label=t_init.get("quick_tgt", ""), scale=1)
                                 
-                            ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=("dynamic"), column_count=(3, "fixed"))
+                            ui_export_config_df = gr.Dataframe(headers=t_init.get("exp_df_headers", []), interactive=True, type="pandas", row_count=("dynamic"), column_count=(3, "fixed"), elem_id="export_recipe_df")
                             ui_strategy_radio = gr.Radio(t_init.get("strat_choices", []), value=t_init.get("strat_choices", [""])[0] if t_init.get("strat_choices") else "", label=t_init.get("strat", ""))
                             ui_max_img_input = gr.Number(label=t_init.get("max_img", ""), value=0, precision=0)
                             ui_export_dir = gr.Textbox(label=t_init.get("dest_folder", ""), placeholder=t_init.get("dest_ph", ""))
+                            ui_export_suffix = gr.Textbox(value="-Sx", label=t_init.get("export_suffix", "Suffixe d'export"), placeholder=t_init.get("export_suffix_ph", "-Sx → -S1, -S2, -S3..."))
                             with gr.Row():
                                 ui_btn_simul = gr.Button(t_init.get("btn_simul", ""), variant="secondary")
                                 ui_btn_exp = gr.Button(t_init.get("btn_exp", ""), variant="primary")
@@ -1921,17 +3518,24 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
                             bar_chart = gr.Plot(label="Graphique (Occurrences)")
                             gr.Markdown("---")
                             ui_adv_stats_title = gr.Markdown(t_init.get("adv_stats_title", ""))
+                            ui_adv_stats_help = gr.Markdown(t_init.get("adv_stats_help", ""))
                             btn_calc_adv = gr.Button(t_init.get("btn_calc_adv", ""), variant="primary")
                             with gr.Row():
-                                plot_heatmap = gr.Plot(label="Matrice")
-                                plot_bucket = gr.Plot(label="Résolutions")
+                                with gr.Column():
+                                    plot_heatmap = gr.Plot(label=t_init.get("adv_heatmap_label", "Matrice"))
+                                    ui_heatmap_help = gr.Markdown(t_init.get("adv_heatmap_help", ""))
+                                with gr.Column():
+                                    plot_bucket = gr.Plot(label=t_init.get("adv_bucket_label", "Résolutions"))
+                                    ui_bucket_help = gr.Markdown(t_init.get("adv_bucket_help", ""))
                             with gr.Row():
                                 with gr.Column():
                                     txt_anti = gr.Textbox(label=t_init.get("anti_title", ""), lines=6, interactive=False)
+                                    ui_anti_help = gr.Markdown(t_init.get("anti_help", ""))
                                 with gr.Column():
                                     txt_contra = gr.Textbox(label=t_init.get("contra_title", ""), lines=6, interactive=False)
+                                    ui_contra_help = gr.Markdown(t_init.get("contra_help", ""))
 
-        with gr.Column(scale=0, elem_id="right_panel"):
+        with gr.Column(scale=0, elem_id="right_panel") as right_panel:
             ui_lib_title = gr.HTML(t_init.get("lib_title", ""))
             
             ui_lib_mode = gr.Radio(t_init.get("lib_mode_choices", []), label=t_init.get("lib_mode", ""), value=t_init.get("lib_mode_choices", [""])[0] if t_init.get("lib_mode_choices") else "")
@@ -1960,8 +3564,8 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
         fn=change_language, 
         inputs=[lang_radio, ui_stats_table, ui_export_config_df, lib_state],
         outputs=[
-            ui_title, ui_guide_acc, ui_guide_text, ui_browse_btn, ui_load_btn, ui_status_text,
-            ui_recipe_global, ui_recipes_dropdown, ui_recipe_name, ui_save_recipe_btn, ui_tracked_words,
+            ui_title, ui_settings_acc, ui_guide_acc, ui_guide_text, ui_dataset_drop_zone, ui_browse_btn, ui_load_btn, ui_status_text,
+            ui_recipe_global, ui_recipes_dropdown, ui_recipe_name, ui_save_recipe_btn, ui_tracked_words, ui_ai_recipe_count, ui_btn_ai_recipe, ui_btn_analyze_recipe,
             ui_gallery_title, ui_search_box, ui_multi_select_cb, ui_clear_sel_btn, ui_gallery_cols,
             ui_toggle_panel_btn, ui_tab_view, ui_btn_prev, ui_btn_next, ui_viewer_shortcuts, ui_toggle_tag_btn,
             ui_live_translation_output, ui_save_single_btn,
@@ -1973,9 +3577,18 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
             ui_tab_ai, ui_ai_conf_title, api_backend, vlm_model, llm_model, ui_ai_adv_acc, api_url_input, ai_temp, ai_ctx, ai_sys,
             ui_ai_act_title, ai_action_dropdown, ai_template_dd, ai_template_name, btn_save_template, custom_prompt_input, use_vision_for_custom, injection_mode, btn_run_ai, btn_undo_ai,
             ui_bias_title, btn_bias, txt_bias,
-            ui_tab_export, ui_exp_edit, ui_btn_up, ui_btn_down, ui_btn_del, ui_quick_prio, ui_quick_target, ui_export_config_df, ui_strategy_radio, ui_max_img_input, ui_export_dir, ui_btn_simul, ui_btn_exp, export_pie, ui_exp_gal,
-            ui_tab_stats, ui_stats_table, ui_btn_civitai, ui_btn_top20, ui_btn_orph, ui_txt_orph, pie_chart, bar_chart, ui_adv_stats_title, btn_calc_adv, txt_anti, txt_contra,
-            ui_lib_title, ui_lib_mode, ui_lib_target, ui_btn_apply_lib, ui_lib_add_text, ui_btn_add_to_lib, ui_btn_uncheck_all, ui_btn_clear_lib, ui_lib_list_title, ui_lib_html
+            ui_tab_export, ui_exp_edit, ui_btn_up, ui_btn_down, ui_btn_del, ui_quick_prio, ui_quick_target, ui_export_config_df, ui_strategy_radio, ui_max_img_input, ui_export_dir, ui_export_suffix, ui_btn_simul, ui_btn_exp, export_pie, ui_exp_gal,
+            ui_tab_stats, ui_stats_table, ui_btn_civitai, ui_btn_top20, ui_btn_orph, ui_txt_orph, pie_chart, bar_chart,
+            ui_adv_stats_title, ui_adv_stats_help, btn_calc_adv, plot_heatmap, ui_heatmap_help, plot_bucket, ui_bucket_help,
+            txt_anti, ui_anti_help, txt_contra, ui_contra_help,
+            ui_lib_title, ui_lib_mode, ui_lib_target, ui_btn_apply_lib, ui_lib_add_text, ui_btn_add_to_lib, ui_btn_uncheck_all, ui_btn_clear_lib, ui_lib_list_title, ui_lib_html,
+            # Composants persistants et réglages avancés
+            ui_fav_section_title, ui_fav_dropdown, ui_btn_add_fav, ui_btn_remove_fav,
+            ui_lang_import_acc, ui_lang_import_info, ui_lang_import_file, ui_lang_import_btn,
+            ui_btn_delete_recipe, ui_sort_order, api_key_input,
+            ui_lm_studio_acc, ui_lm_studio_list_btn, ui_lm_studio_vlm_dd, ui_lm_studio_llm_dd, ui_lm_studio_shared_dd,
+            ui_lm_studio_load_vlm, ui_lm_studio_load_llm, ui_lm_studio_load_shared,
+            ui_lm_studio_unload_vlm, ui_lm_studio_unload_llm, ui_lm_studio_unload_shared, ui_lm_studio_save_choices,
         ]
     )
 
@@ -1997,27 +3610,85 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_multi_select_cb.change(fn=lambda x: x, inputs=[ui_multi_select_cb], outputs=[])
     js_toggle = "function() { const p = document.getElementById('left_panel'); const b = document.getElementById('toggle_gallery_btn'); if (p.classList.contains('collapsed')) { p.classList.remove('collapsed'); b.innerText = '◀'; } else { p.classList.add('collapsed'); b.innerText = '▶'; } return []; }"
     ui_toggle_panel_btn.click(fn=None, js=js_toggle)
+    js_toggle_right = "function() { const p = document.getElementById('right_panel'); const b = document.getElementById('toggle_right_btn'); if (p.classList.contains('collapsed')) { p.classList.remove('collapsed'); b.innerText = '▶'; } else { p.classList.add('collapsed'); b.innerText = '◀'; } return []; }"
+    ui_toggle_right_btn.click(fn=None, js=js_toggle_right)
     ui_browse_btn.click(fn=browse_folder, inputs=[], outputs=[dir_input])
-    ui_gallery_cols.change(fn=lambda x: gr.update(columns=int(x)), inputs=[ui_gallery_cols], outputs=[gallery])
+    ui_hidden_dataset_path_btn.click(
+        fn=set_dataset_path_from_drop,
+        inputs=[ui_hidden_dataset_path_input, lang_radio],
+        outputs=[dir_input, ui_status_text, ui_hidden_dataset_path_input],
+    ).success(
+        fn=None,
+        js="function(){ const w=document.getElementById('hidden_dataset_path_input'); const v=w?.querySelector('textarea,input')?.value || ''; if(v.startsWith('__RESOLVED_PATH__')) setTimeout(()=>document.getElementById('dataset_load_btn')?.click(), 120); }",
+    )
+    ui_gallery_cols.change(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery])
+    ui_gallery_cols.release(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery])
 
     ui_load_btn.click(fn=load_dataset, inputs=[dir_input, ui_sort_order, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state])
     ui_search_box.change(fn=filter_gallery, inputs=[dataset_state, ui_search_box, ui_sort_order, lang_radio], outputs=[filtered_state, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, current_idx_state])
     ui_sort_order.change(fn=filter_gallery, inputs=[dataset_state, ui_search_box, ui_sort_order, lang_radio], outputs=[filtered_state, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, current_idx_state])
     
-    ui_hidden_sync_btn.click(fn=handle_sync, inputs=[ui_hidden_sync_input, dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, selected_indices_state, ui_selection_status, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status, ui_hidden_tags_input])
-    ui_btn_prev.click(fn=nav_prev, inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status])
-    ui_btn_next.click(fn=nav_next, inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status])
+    live_translation_inputs = [current_caption, ui_trans_engine, ui_trans_target, api_backend, api_url_input, llm_model, lang_radio, api_key_input]
+
+    ui_hidden_sync_btn.click(
+        fn=handle_sync,
+        inputs=[ui_hidden_sync_input, dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio],
+        outputs=[dataset_state, filtered_state, selected_indices_state, ui_selection_status, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status, ui_hidden_tags_input],
+    ).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
+    ui_btn_prev.click(
+        fn=nav_prev,
+        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio],
+        outputs=[dataset_state, filtered_state, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status],
+    ).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
+    ui_btn_next.click(
+        fn=nav_next,
+        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio],
+        outputs=[dataset_state, filtered_state, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status],
+    ).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
     ui_save_single_btn.click(fn=save_single_caption, inputs=[dataset_state, filtered_state, current_idx_state, current_caption, lang_radio], outputs=[dataset_state, filtered_state, ui_single_save_status])
     ui_clear_sel_btn.click(fn=clear_selection, inputs=[lang_radio], outputs=[selected_indices_state, ui_selection_status, ui_hidden_sync_input])
 
-    current_caption.change(fn=do_live_translation, inputs=[current_caption, ui_trans_engine, ui_trans_target, api_backend, api_url_input, llm_model, lang_radio], outputs=[ui_live_translation_output], show_progress="hidden")
+    current_caption.input(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+        trigger_mode="always_last",
+        concurrency_limit=1,
+        concurrency_id="live_translation",
+    )
     
     ui_btn_translate_entire_caption.click(
         fn=translate_entire_caption_action, 
-        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, ui_tracked_words, lang_radio], 
+        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, ui_tracked_words, lang_radio, api_key_input], 
         outputs=[dataset_state, filtered_state, current_caption, highlight_preview, word_counter, ui_single_save_status]
+    ).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
     )
-    ui_btn_insert_trans.click(fn=trans_insert, inputs=[ui_trans_input, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, lang_radio], outputs=[current_caption]).success(fn=lambda: "", outputs=[ui_trans_input])
+    ui_btn_insert_trans.click(fn=trans_insert, inputs=[ui_trans_input, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, lang_radio, api_key_input], outputs=[current_caption]).success(fn=lambda: "", outputs=[ui_trans_input]).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
 
     js_confirm_batch = "(...args) => { if (!confirm('⚠️ Appliquer cette modification en masse sur la sélection ? / Apply this mass modification to the selection?')) throw new Error('Annulé.'); return args; }"
     js_confirm_undo = "(...args) => { if (!confirm('⚠️ Annuler la dernière action ? / Undo the last action?')) throw new Error('Annulé.'); return args; }"
@@ -2028,7 +3699,12 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_btn_uncheck_all.click(fn=uncheck_all_lib, inputs=[lib_state, lang_radio], outputs=[ui_lib_html, lib_state])
     ui_btn_clear_lib.click(fn=clear_lib, inputs=[lang_radio], outputs=[ui_lib_html, lib_state])
     
-    ui_btn_apply_lib.click(fn=batch_library_cb, js=js_confirm_batch, inputs=[dataset_state, lib_state, ui_lib_mode, ui_lib_target, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter, gallery])
+    ui_btn_apply_lib.click(fn=batch_library_cb, js=js_confirm_batch, inputs=[dataset_state, lib_state, ui_lib_mode, ui_lib_target, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter, gallery]).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
 
     js_get_sel = "function(tracker, dummy) { let sel = window.getSelection().toString().trim(); if(!sel) { let ae = document.activeElement; if(ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT')) sel = ae.value.substring(ae.selectionStart, ae.selectionEnd).trim(); } return [tracker, sel || \"\"]; }"
     ui_hidden_calc_btn.click(fn=analyze_dataset, inputs=[dataset_state, ui_tracked_words, lang_radio], outputs=[pie_chart, bar_chart, ui_stats_table, stats_df_state, ui_export_config_df, config_df_state, ui_stats_status])
@@ -2037,10 +3713,34 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     current_caption.change(fn=update_word_count, inputs=[current_caption, lang_radio], outputs=[word_counter])
     ui_recipes_dropdown.change(fn=apply_recipe, inputs=[ui_recipes_dropdown], outputs=[ui_tracked_words])
     ui_save_recipe_btn.click(fn=save_recipe, inputs=[ui_recipe_name, ui_tracked_words], outputs=[ui_recipes_dropdown, ui_status_text])
+    ui_btn_ai_recipe.click(
+        fn=auto_fill_recipe_from_ai,
+        inputs=[dataset_state, ui_ai_recipe_count, api_backend, api_url_input, llm_model, ai_temp, ai_ctx, ai_sys, lang_radio, api_key_input],
+        outputs=[ui_tracked_words, ui_status_text],
+    ).success(
+        fn=None,
+        js="function(){ setTimeout(()=>document.getElementById('hidden_calc_btn')?.click(), 80); }",
+    )
+    ui_btn_analyze_recipe.click(fn=None, js="function(){ setTimeout(()=>document.getElementById('hidden_calc_btn')?.click(), 30); }")
 
-    ui_btn_undo.click(fn=undo_last_action, js=js_confirm_undo, inputs=[dataset_state, history_state, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, ui_batch_status, current_caption, highlight_preview, word_counter])
-    ui_btn_clean_com.click(fn=batch_clean_commas, js=js_confirm_batch, inputs=[dataset_state, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter])
-    ui_btn_clean_dup.click(fn=batch_remove_duplicates, js=js_confirm_batch, inputs=[dataset_state, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter])
+    ui_btn_undo.click(fn=undo_last_action, js=js_confirm_undo, inputs=[dataset_state, history_state, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, ui_batch_status, current_caption, highlight_preview, word_counter]).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
+    ui_btn_clean_com.click(fn=batch_clean_commas, js=js_confirm_batch, inputs=[dataset_state, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter]).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
+    ui_btn_clean_dup.click(fn=batch_remove_duplicates, js=js_confirm_batch, inputs=[dataset_state, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter]).success(
+        fn=do_live_translation,
+        inputs=live_translation_inputs,
+        outputs=[ui_live_translation_output],
+        show_progress="hidden",
+    )
 
     ui_export_config_df.select(fn=get_row_index, inputs=[config_df_state], outputs=[recipe_selected_row, ui_quick_prio, ui_quick_target])
     ui_quick_prio.change(fn=apply_quick_prio, inputs=[ui_quick_prio, recipe_selected_row, config_df_state], outputs=[ui_export_config_df, config_df_state, ui_tracked_words, recipe_selected_row])
@@ -2048,7 +3748,7 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_btn_up.click(fn=df_move_up, inputs=[ui_export_config_df, recipe_selected_row], outputs=[ui_export_config_df, recipe_selected_row, ui_tracked_words])
     ui_btn_down.click(fn=df_move_down, inputs=[ui_export_config_df, recipe_selected_row], outputs=[ui_export_config_df, recipe_selected_row, ui_tracked_words])
     ui_btn_del.click(fn=df_delete_row, inputs=[ui_export_config_df, recipe_selected_row], outputs=[ui_export_config_df, recipe_selected_row, ui_tracked_words])
-    ui_hidden_dnd_btn.click(fn=handle_drag_and_drop, inputs=[ui_hidden_dnd_input, ui_export_config_df], outputs=[ui_export_config_df, ui_tracked_words])
+    ui_hidden_dnd_btn.click(fn=handle_drag_and_drop, inputs=[ui_hidden_dnd_input, ui_export_config_df], outputs=[ui_export_config_df, config_df_state, ui_tracked_words])
     ui_export_config_df.change(fn=handle_recipe_df_safe, inputs=[ui_export_config_df, config_df_state, ui_tracked_words], outputs=[ui_export_config_df, config_df_state, ui_tracked_words])
 
     ui_btn_civitai.click(fn=generate_civitai_format, inputs=[ui_stats_table], outputs=[ui_civitai_output])
@@ -2057,8 +3757,12 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     ui_stats_table.change(fn=handle_stats_df_safe, inputs=[ui_stats_table, stats_df_state, ui_tracked_words], outputs=[ui_stats_table, stats_df_state, ui_tracked_words]).success(fn=None, js="function(){ setTimeout(()=>document.getElementById('hidden_calc_btn')?.click(), 100); }")
     btn_calc_adv.click(fn=update_advanced_stats, inputs=[dataset_state], outputs=[plot_heatmap, plot_bucket, txt_anti, txt_contra])
 
-    ui_btn_simul.click(fn=simulate_and_export, inputs=[dataset_state, ui_export_dir, ui_export_config_df, gr.State(True), selected_indices_state, ui_strategy_radio, ui_max_img_input, lang_radio], outputs=[ui_export_status, export_gallery, export_pie, bar_chart])
-    ui_btn_exp.click(fn=simulate_and_export, inputs=[dataset_state, ui_export_dir, ui_export_config_df, gr.State(False), selected_indices_state, ui_strategy_radio, ui_max_img_input, lang_radio], outputs=[ui_export_status, export_gallery, export_pie, bar_chart])
+    ui_btn_simul.click(
+        fn=simulate_and_clear_selection,
+        inputs=[dataset_state, ui_export_dir, ui_export_suffix, ui_export_config_df, selected_indices_state, ui_strategy_radio, ui_max_img_input, lang_radio],
+        outputs=[ui_export_status, export_gallery, export_pie, bar_chart, selected_indices_state, ui_selection_status, ui_hidden_sync_input],
+    )
+    ui_btn_exp.click(fn=simulate_and_export, inputs=[dataset_state, ui_export_dir, ui_export_suffix, ui_export_config_df, gr.State(False), selected_indices_state, ui_strategy_radio, ui_max_img_input, lang_radio], outputs=[ui_export_status, export_gallery, export_pie, bar_chart])
     btn_scan_dups.click(fn=scan_duplicates_advanced, inputs=[dataset_state, ui_hash_tol], outputs=[dup_dropdown, dup_mapping_state])
     dup_dropdown.change(fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state], outputs=[dup_img_A, dup_img_B, dup_idA, dup_idB])
     btn_del_A.click(fn=delete_duplicate, inputs=[dataset_state, filtered_state, dup_idA, dup_dropdown, dup_mapping_state], outputs=[dataset_state, filtered_state, dup_dropdown, dup_mapping_state, dup_status])
@@ -2067,16 +3771,142 @@ with gr.Blocks(title="IMG Dataset Refiner v4.0 Pro", css=css_code) as app:
     btn_prep.click(fn=batch_process_images, inputs=[dataset_state, prep_dest, prep_size, prep_format, prep_crop, prep_alpha], outputs=[prep_status])
 
     ai_action_dropdown.change(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group])
-    api_backend.change(fn=lambda x: "http://127.0.0.1:11434" if x == "Ollama" else "http://127.0.0.1:1234", inputs=[api_backend], outputs=[api_url_input])
+
+    def _switch_backend_url(backend):
+        """Bascule l'URL par défaut quand on change de backend.
+        Ollama → 11434, LM Studio/OpenAI → 1234, Anthropic/Gemini → URL cloud."""
+        kind = _backend_kind(backend)
+        if kind == "ollama":
+            return gr.update(value=DEFAULT_OLLAMA_URL)
+        if kind == "anthropic":
+            return gr.update(value=DEFAULT_ANTHROPIC_URL)
+        if kind == "gemini":
+            return gr.update(value=DEFAULT_GEMINI_URL)
+        return gr.update(value=DEFAULT_LM_STUDIO_URL)
+
+    ai_settings_inputs = [api_backend, vlm_model, llm_model, api_url_input, api_key_input, ai_temp, ai_ctx, ai_sys]
+    api_backend.change(fn=_switch_backend_url, inputs=[api_backend], outputs=[api_url_input]).success(
+        fn=save_ai_settings, inputs=ai_settings_inputs, outputs=None,
+    )
+    for ai_setting_component in [vlm_model, llm_model, api_url_input, api_key_input, ai_temp, ai_ctx, ai_sys]:
+        ai_setting_component.change(fn=save_ai_settings, inputs=ai_settings_inputs, outputs=None)
     ai_template_dd.change(fn=apply_ai_recipe, inputs=[ai_template_dd], outputs=[custom_prompt_input])
     btn_save_template.click(fn=save_ai_recipe, inputs=[ai_template_name, custom_prompt_input], outputs=[ai_template_dd])
-    btn_run_ai.click(fn=process_ai_action, inputs=[dataset_state, selected_indices_state, ui_search_box, ai_action_dropdown, custom_prompt_input, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ai_status, ui_hidden_tags_input, current_caption, highlight_preview, word_counter])
-    btn_bias.click(fn=analyze_bias, inputs=[dataset_state, llm_model, api_backend, api_url_input, ai_temp, ai_ctx, ai_sys], outputs=[txt_bias])
+    btn_run_ai.click(
+        fn=process_ai_action,
+        inputs=[
+            dataset_state, selected_indices_state, ui_search_box, ai_action_dropdown,
+            custom_prompt_input, injection_mode, use_vision_for_custom, vlm_model, llm_model,
+            api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, current_idx_state,
+            ui_tracked_words, lang_radio, api_key_input,
+        ],
+        outputs=[dataset_state, filtered_state, history_state, ai_status, ui_hidden_tags_input, current_caption, highlight_preview, word_counter],
+    )
+    btn_bias.click(
+        fn=analyze_bias,
+        inputs=[dataset_state, llm_model, api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, lang_radio, api_key_input],
+        outputs=[txt_bias],
+    )
+
+    # 🎯 LM Studio : Rafraîchissement et chargement
+    ui_lm_studio_list_btn.click(
+        fn=refresh_lm_studio_models,
+        inputs=[api_url_input, lang_radio],
+        outputs=[ui_lm_studio_vlm_dd, ui_lm_studio_llm_dd, ui_lm_studio_shared_dd, ui_lm_studio_status],
+    )
+    lm_studio_choice_inputs = [
+        ui_lm_studio_vlm_dd, ui_lm_studio_llm_dd, ui_lm_studio_shared_dd,
+        api_backend, api_url_input, api_key_input, ai_temp, ai_ctx, ai_sys, lang_radio,
+    ]
+    ui_lm_studio_load_vlm.click(
+        fn=lm_studio_load_model,
+        inputs=[ui_lm_studio_vlm_dd, api_url_input, lang_radio],
+        outputs=[ui_lm_studio_status],
+    ).success(
+        # Synchronise le champ "Modèle Vision" avec le modèle chargé
+        fn=lambda x: gr.update(value=x or ""), inputs=[ui_lm_studio_vlm_dd], outputs=[vlm_model],
+    ).success(
+        fn=save_ai_settings, inputs=ai_settings_inputs, outputs=None,
+    )
+    ui_lm_studio_load_llm.click(
+        fn=lm_studio_load_model,
+        inputs=[ui_lm_studio_llm_dd, api_url_input, lang_radio],
+        outputs=[ui_lm_studio_status],
+    ).success(
+        fn=lambda x: gr.update(value=x or ""), inputs=[ui_lm_studio_llm_dd], outputs=[llm_model],
+    ).success(
+        fn=save_ai_settings, inputs=ai_settings_inputs, outputs=None,
+    )
+    ui_lm_studio_load_shared.click(
+        fn=lm_studio_load_model,
+        inputs=[ui_lm_studio_shared_dd, api_url_input, lang_radio],
+        outputs=[ui_lm_studio_status],
+    ).success(
+        fn=lambda x: (gr.update(value=x or ""), gr.update(value=x or "")),
+        inputs=[ui_lm_studio_shared_dd],
+        outputs=[vlm_model, llm_model],
+    ).success(
+        fn=save_lm_studio_model_choices,
+        inputs=lm_studio_choice_inputs,
+        outputs=[vlm_model, llm_model, ui_lm_studio_status],
+    )
+    ui_lm_studio_unload_vlm.click(
+        fn=lm_studio_unload_model,
+        inputs=[ui_lm_studio_vlm_dd, api_url_input, lang_radio],
+        outputs=[ui_lm_studio_status],
+    )
+    ui_lm_studio_unload_llm.click(
+        fn=lm_studio_unload_model,
+        inputs=[ui_lm_studio_llm_dd, api_url_input, lang_radio],
+        outputs=[ui_lm_studio_status],
+    )
+    ui_lm_studio_unload_shared.click(
+        fn=lm_studio_unload_model,
+        inputs=[ui_lm_studio_shared_dd, api_url_input, lang_radio],
+        outputs=[ui_lm_studio_status],
+    )
+    ui_lm_studio_save_choices.click(
+        fn=save_lm_studio_model_choices,
+        inputs=lm_studio_choice_inputs,
+        outputs=[vlm_model, llm_model, ui_lm_studio_status],
+    )
+
+    # ⭐ Favoris : ajout, retrait, sélection
+    ui_btn_add_fav.click(fn=add_favorite, inputs=[dir_input, lang_radio], outputs=[ui_fav_dropdown, ui_status_text])
+    ui_btn_remove_fav.click(fn=remove_favorite, inputs=[ui_fav_dropdown, lang_radio], outputs=[ui_fav_dropdown, ui_status_text])
+    ui_fav_dropdown.change(fn=pick_favorite, inputs=[ui_fav_dropdown, lang_radio], outputs=[dir_input])
+
+    # 🗑️ Suppression de recette
+    ui_btn_delete_recipe.click(
+        fn=delete_recipe,
+        js="(name, lang) => { if (name && !confirm('⚠️ Supprimer la recette \"' + name + '\" ? / Delete recipe?')) throw new Error('Annulé.'); return [name, lang]; }",
+        inputs=[ui_recipes_dropdown, lang_radio],
+        outputs=[ui_recipes_dropdown, ui_status_text],
+    )
+
+    # 🌐 Import d'un fichier de langue personnalisé
+    ui_lang_import_btn.click(
+        fn=import_language_file,
+        inputs=[ui_lang_import_file, lang_radio],
+        outputs=[ui_lang_import_status],
+    )
 
     app.load(fn=lambda: None, inputs=None, outputs=None, js=custom_js)
 
 if __name__ == "__main__":
+    launch_kwargs = {
+        "inbrowser": True,
+        "server_name": "127.0.0.1",
+        "allowed_paths": get_gradio_allowed_paths(),
+    }
+    if get_gradio_major_version() >= 6:
+        launch_kwargs["css"] = css_code
     try:
-        app.launch(inbrowser=True, server_name="127.0.0.1", css=css_code)
+        app.launch(**launch_kwargs)
     except TypeError:
-        app.launch(inbrowser=True, server_name="127.0.0.1")
+        launch_kwargs.pop("css", None)
+        try:
+            app.launch(**launch_kwargs)
+        except TypeError:
+            launch_kwargs.pop("allowed_paths", None)
+            app.launch(**launch_kwargs)

@@ -1,116 +1,309 @@
-# **📊 IMG Dataset Refiner (v4.0 Pro)**
+# IMG Dataset Refiner v4.3 Pro
 
-<<<<<<< HEAD
-**The ultimate tool for management, balancing, pre-processing, batch editing, and AI assistance (VLM/LLM) for model training preparation (LoRA, SDXL, Flux)** [Installation](#bookmark=id.1cp2sfue8mje) • [What's new in v4.0](#bookmark=id.orop7sxzzoky) • [Features](#bookmark=id.o5ybkqotgy38) • [Workflow](#bookmark=id.rwtjzpocgan2)
-
-## **🎯 About**
-
-**IMG Dataset Refiner** is a "desktop-like" software suite designed for AI model creators. Powered by **Gradio** with native JavaScript injections and custom CSS for optimal performance, this tool allows you to **visualize, massively edit, pre-process, clean, analyze via AI, and export** your image datasets with surgical precision.
-=======
 <div align="center">
-  <img src="https://github.com/NyxAwroo/IMG-Dataset-Refiner/raw/main/logotype/logo.jpg" alt="IMG Dataset Refiner Logo" width="250"/>
+  <img src="logotype/logo.jpg" alt="IMG Dataset Refiner logo" width="240">
+
+  <br>
+
+  ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
+  ![Gradio](https://img.shields.io/badge/Gradio-4%2B%20%2F%206%20ready-F97316?style=for-the-badge)
+  ![Windows](https://img.shields.io/badge/Windows-one--click%20install-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+  ![Local AI](https://img.shields.io/badge/Local%20AI-Ollama%20%7C%20LM%20Studio-16A34A?style=for-the-badge)
+  ![Languages](https://img.shields.io/badge/Languages-FR%20%7C%20EN%20%7C%20custom-8B5CF6?style=for-the-badge)
+
+  <p><strong>Desktop-style dataset manager for LoRA, Flux, SDXL and Stable Diffusion training workflows.</strong></p>
+
+  <p>
+    <a href="#preview">Preview</a> |
+    <a href="#features">Features</a> |
+    <a href="#installation">Installation</a> |
+    <a href="#workflow">Workflow</a> |
+    <a href="#ai-backends">AI Backends</a> |
+    <a href="#developer-notes">Developer Notes</a>
+  </p>
 </div>
 
-![English](https://img.shields.io/badge/Language-English-blue?style=flat-square) ![Français](https://img.shields.io/badge/Langue-Fran%C3%A7ais-blue?style=flat-square)
+---
 
-**The ultimate tool for management, balancing, pre-processing, and AI assistance (VLM/LLM) for model training preparation (LoRA, SDXL, Flux)** [Installation](#bookmark=id.93ne4h8eoc6q) • [What's new in v3](#bookmark=id.uer02e3me5fz) • [Features](#bookmark=id.4b2b3rabed25) • [Workflow](#bookmark=id.o7c1e8yukqn)
+## Overview
 
-## **🎯 About**
+**IMG Dataset Refiner** is a local Gradio application for building clean, balanced and training-ready image datasets. It helps you load folders of images and `.txt` captions, edit captions quickly, batch-apply keywords, pre-process images, detect duplicates, analyze dataset bias, and export curated subsets with balancing rules.
 
-![Main Interface Preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/raw/main/screenshots%20demo/Firefox_Screenshot_2026-05-04T14-19-20.248Z.png)
+It is built for creators training:
 
-**IMG Dataset Refiner** (formerly *Datasets Images EditSelect*) is a "desktop-like" software suite designed for AI model creators. Powered by **Gradio** with native JavaScript injections for optimal performance, this tool allows you to **visualize, pre-process, clean, analyze via AI, and export** your image datasets with surgical precision.
->>>>>>> 4bcea8be3048364bec6ecc527ff60c2e1177a736
+- character, style, object and concept **LoRAs**;
+- **Flux**, **SDXL**, Stable Diffusion and related image models;
+- datasets requiring caption cleanup, translation, balancing and visual QA.
 
-## **🚀 What's New in v4.0 Pro**
+The app runs locally and can work with local AI servers such as **Ollama** and **LM Studio**, while also supporting OpenAI-compatible endpoints and cloud providers when configured.
 
-This version brings unprecedented fluidity to the manual editing of your dataset:
+---
 
-* **📚 Word Library (Custom Mass Batch):** A unique, interactive new module to keep a list of tags handy. Check them to Add, Remove, or Replace massively on a selection of images with a single click.  
-* **🌍 Live Translation Assistant:** Translate your captions in real-time, inject translated words on the fly, or convert an entire .txt file to English instantly thanks to deep-translator integration. The preview is displayed live right below your typing area.  
-* **⌨️ Absolute Productivity:** Navigate from image to image using PageUp/PageDown without ever having to click outside the text box. Save on the fly with Ctrl+S.  
-* **🗂️ Dynamic Sorting and Redesigned UI:** Sort your images from A to Z or Z to A, enjoy an interface freed from distracting native menus, and switch the entire application between French and English with a single click.
+## Preview
 
-## **⚙️ Key Features**
+Place your screenshots in the `screenshots demo/` folder, then update the image links below.
 
-### **🤖 AI Capabilities (Local Assistant via API)**
+### Main Workspace
 
-* **Ollama / LM Studio Integration:** Native support to run language models (LLM) and vision models (VLM) directly on the dataset via local API.  
-* **Auto-Tagging / Super OCR (VLM):** Full caption generation or precise extraction of text embedded in the image.  
-* **Reality Check & Hallucination Hunter (VLM):** The AI compares the text to the image and automatically removes tags that describe invisible elements.  
-* **Concept Isolator (VLM):** The AI describes the environment and ignores the central subject, ideal for preparing training data for character LoRAs.  
-* **Visual Translator (Booru ↔ Natural):** Intelligent conversion of tag lists into fluid, complete sentences (optimized for Flux and SD3).
+![Main workspace preview](screenshots%20demo/01-main-workspace.png)
 
-### **🖼️ Duplicate Tracking & Pre-processing**
+> Suggested screenshot: full desktop view showing the left gallery, center editor and right custom library.
 
-* **Duplicates (ImageHash):** Customizable visual scanner detecting similar images (exact clones or crops) with a quick A/B deletion interface.  
-* **Smart Face Crop (OpenCV):** Automatic cropping centered on detected faces to optimize portraits.  
-* **Mass Resizing:** High-quality downscaling (Lanczos) to 512, 768, 1024, or 1536px, with automatic handling of transparent PNGs (white background).  
-* **Batch Renaming:** Clean, incremental renaming (prefix\_0001.jpg) of all images and their associated .txt files in one click.
+### AI Assistant
 
-### **🧬 Advanced Analytics & Quality**
+![AI assistant preview](screenshots%20demo/02-ai-assistant.png)
 
-* **Co-occurrence Matrix (Heatmap):** Interactive Plotly chart analyzing the links between your top 20 tags to detect "Concept Bleeding".  
-* **Resolution Bucketing:** Scatter plot chart to visualize the resolution distribution of your raw images.  
-* **Contradiction Hunter:** Automatic detection of logical aberrations in your captions (e.g., "day" \+ "night" on the same image).  
-* **Orphan Tags:** Detection of unique keywords (often indicative of typos).
+> Suggested screenshot: local AI backend settings, LM Studio controls and action selector.
 
-### **📁 Strategic Export**
+### Export & Recipe
 
-* **Auto Balancing (Percentages):** Set appearance targets for your concepts (e.g., 50% man, 50% woman) and the "Greedy" algorithm will pick the perfect images to reach this ratio.  
-* **CivitAI Table Generation:** Export your statistics with one click to paste them directly onto your model page.
+![Export recipe preview](screenshots%20demo/03-export-recipe.png)
 
-## **🔄 Recommended Workflow**
+> Suggested screenshot: recipe table, balancing strategy, simulation/export result.
 
-1️⃣ **Pre-processing (🖼️ Tab)** └─ Clean visual duplicates, appropriately rename your files, and resize your images if necessary.  
-2️⃣ **AI Auto-Captioning (🤖 Tab)** └─ Let your local Vision model (e.g., LLaVA or Qwen) generate a solid first base of tags on your entire selection.  
-3️⃣ **Quick Editing & Translation (👁️ Tab)** └─ Navigate quickly with the keyboard (PageUp/PageDown). Use the **Live Translation** preview to write your ideas in your native language and insert them instantly in English.  
-4️⃣ **Mass Editing (⚡ Tab & 📚 Library)** └─ Fill your Custom Library with keywords. Select multiple images (Ctrl+Click), then add or remove these concepts in one click to standardize your dataset.  
-5️⃣ **Audits & Strategic Export (📈 & 📁 Tabs)** └─ Ensure there is no bias using the co-occurrence *Heatmap*. Enter your % targets, simulate the balance, and export a perfect, training-ready dataset\!
+### Advanced Analytics
 
-## **⚙️ Installation**
+![Advanced analytics preview](screenshots%20demo/04-analytics.png)
 
-1. Clone this repository or download the files.  
-2. Install the required dependencies via your terminal:  
-   pip install gradio pandas plotly imagehash opencv-python deep-translator
+> Suggested screenshot: co-occurrence matrix, resolution plot, exclusion matrix and contradiction hunter.
 
-3. Run the script:  
-   python lora\_manager.py
+---
 
-## **📦 Project Structure**
+## Features
 
-IMG-Dataset-Refiner/      
-├── lora\_manager.py          \# Main entry point (Business logic and UI)      
-├── Changelog.md             \# Update history (v4.0 Pro)      
-├── en.json                  \# English language dictionary      
-├── fr.json                  \# French language dictionary      
-├── lora\_recipes.json        \# Saves of your export configurations    
-├── ai\_recipes.json          \# Saves of your Custom AI prompts    
-├── README.md                \# This documentation (English)      
-├── README\_fr.md             \# French documentation      
-└── requirements.txt         \# Python dependencies
+### Dataset Loading
 
-## **🎓 Use Cases**
+- Load datasets from local paths on any drive.
+- Drag and drop folders or files into the app.
+- Fallback folder-signature search when the browser hides absolute paths.
+- Persistent favorites for frequently used datasets.
+- Natural sorting: `img1`, `img2`, `img10`.
+- Gradio `allowed_paths` support for external local folders.
 
-✅ Preparation of demanding datasets for **LoRA fine-tuning** (SD 1.5, SDXL, Flux)  
-✅ Privacy-respecting **local auto-captioning** (100% offline)  
-✅ Mathematical balancing of **multi-concept** datasets  
-✅ Lightning-fast mass annotation via the **Custom Library** ✅ Identification and resolution of **overfitting** issues via visual audits
+### Caption Editing
 
-## **📄 License**
+- Fast visual gallery with persistent column preference.
+- Image viewer with caption editor.
+- Keyboard navigation with arrows and `PageUp` / `PageDown`.
+- `Ctrl+S` save shortcut.
+- Live word and token counters.
+- Highlight tracked tags from the global recipe.
+- Live translation preview and full-caption translation.
 
-Free to use and modify for your personal and professional AI workflows.
+### Batch Editing
 
-## **🤝 Contribution**
+- Clean comma spacing.
+- Remove duplicate tags.
+- Apply keyword library items to a selection or the whole dataset.
+- Add, remove or replace caption fragments at scale.
+- Undo last batch operation.
 
-Contributions are welcome\! Feel free to:
+### Custom Word Library
 
-* Report bugs via Issues  
-* Propose improvements  
-* Submit Pull Requests
+- Right-side mass-batch word library.
+- Click-to-select custom HTML items.
+- JavaScript bridge for reliable Gradio/Svelte synchronization.
+- Add, remove and clear library entries.
 
-<<<<<<< HEAD
-**Forged with ❤️ for the Generative AI community.**
-=======
-**Forged with ❤️ for the AI community** [⬆️ Back to top](#bookmark=id.jsyvg8l7x16z)
->>>>>>> 4bcea8be3048364bec6ecc527ff60c2e1177a736
+### AI Assistance
+
+- Local LLM/VLM actions through Ollama or LM Studio.
+- OpenAI-compatible endpoint support.
+- Cloud support for Anthropic Claude and Google Gemini.
+- Auto-captioning / OCR with vision models.
+- Reality check / hallucination cleanup.
+- Concept isolator for LoRA subject separation.
+- Tag sorting and standardization.
+- Custom prompt templates.
+- Dataset profiling report with compact tag statistics.
+- AI-generated global recipe from existing captions.
+
+### LM Studio Controls
+
+- Refresh available LM Studio models.
+- Favorite VLM and LLM model selectors.
+- Shared model selector for using one model as both VLM and LLM.
+- Load and unload model buttons.
+- Persistent AI settings in `ai_settings.json`.
+
+### Image Pre-processing
+
+- Visual duplicate detection with `imagehash`.
+- Smart face crop via OpenCV.
+- Center square crop.
+- Batch resize to common training resolutions.
+- WebP / JPEG output.
+- Transparent-background flattening for PNGs.
+- Batch renaming for images and captions.
+
+### Analytics
+
+- General tag frequency table.
+- CivitAI / Markdown statistics export.
+- Top-20 recipe fill.
+- Orphan tag detection.
+- Co-occurrence heatmap.
+- Resolution distribution plot.
+- Exclusion matrix.
+- Contradiction hunter.
+- In-app explanations for reading analytics outputs.
+
+### Export
+
+- Classic filtering, auto-balancing and priority strategies.
+- Greedy export algorithm for balanced subsets.
+- Simulation before export.
+- Versioned export folders based on the dataset name.
+- Custom export suffix with `-Sx` / `-S1`, `-S2`, `-S3` behavior.
+
+---
+
+## Installation
+
+### Windows One-click Install
+
+1. Download or clone the repository.
+2. Double-click `install.bat`.
+3. Double-click `start.bat`.
+4. The browser opens automatically.
+
+### Manual Install
+
+```bash
+git clone https://github.com/NyxAwroo/IMG-Dataset-Refiner.git
+cd IMG-Dataset-Refiner
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS / Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+python lora_manager.py
+```
+
+---
+
+## Workflow
+
+1. **Load a dataset**
+   - Paste a folder path, use Browse, drag and drop, or pick a favorite.
+
+2. **Inspect and edit captions**
+   - Use the gallery, viewer and caption editor.
+   - Adjust gallery columns if needed; the setting is saved.
+
+3. **Clean in batch**
+   - Remove duplicate tags, normalize commas and apply word-library actions.
+
+4. **Use AI selectively**
+   - Generate captions, clean hallucinations, standardize tags or build a global recipe.
+
+5. **Analyze**
+   - Check tag frequencies, heatmaps, contradictions and resolution distribution.
+
+6. **Simulate and export**
+   - Tune the recipe table, simulate the result, then export a versioned clean dataset.
+
+---
+
+## AI Backends
+
+| Backend | Use case | Notes |
+| --- | --- | --- |
+| Ollama | Local LLM/VLM workflows | Default local backend, no API key required. |
+| LM Studio / OpenAI-compatible | Local GGUF or remote compatible APIs | Uses `/v1/chat/completions`. Model IDs must match the server. |
+| Anthropic Claude | Cloud text and vision workflows | Requires an API key. |
+| Google Gemini | Cloud text and vision workflows | Requires an API key. |
+
+AI settings are stored in `ai_settings.json`.
+
+---
+
+## Project Structure
+
+```text
+IMG Dataset Refiner/
+├── lora_manager.py              # Main application: UI, backend logic, custom JS bridge
+├── requirements.txt             # Python dependencies
+├── install.bat                  # Windows installer
+├── start.bat                    # Windows launcher
+├── Changelog.md                 # Release notes
+├── Prompt_system.md             # Future-development handoff prompt
+├── readme.md                    # GitHub documentation
+├── SUGGESTIONS.md               # Optional improvement backlog
+├── lora_recipes.json            # Saved global/export recipes
+├── ai_settings.json             # Persistent AI backend/model settings
+├── ui_settings.json             # Persistent UI preferences, including gallery columns
+├── languages/
+│   ├── fr.json                  # French UI strings
+│   └── en.json                  # English UI strings
+├── logotype/
+│   └── logo.jpg                 # Logo used in README
+└── screenshots demo/            # Place GitHub preview screenshots here
+```
+
+Generated files such as `favorites.json`, `ai_recipes.json` and export folders may appear after using the app.
+
+---
+
+## Languages
+
+The UI is fully driven by JSON language files.
+
+To add a language:
+
+1. Copy `languages/fr.json` or `languages/en.json`.
+2. Rename it, for example `de.json`, `es.json`, `it.json`.
+3. Translate values while preserving keys.
+4. Put it in `languages/`.
+5. Restart the app.
+
+You can also import a language JSON file directly from the in-app settings panel.
+
+---
+
+## Developer Notes
+
+This project relies on a sensitive Gradio + JavaScript bridge. Before editing `lora_manager.py`, read `Prompt_system.md`.
+
+Important stability rules:
+
+- Do not pass `custom_js` through `launch(js=...)`.
+- Keep the custom JavaScript injection through `app.load(..., js=custom_js)`.
+- Do not combine `custom_js` and frontend component outputs in the same `app.load` event.
+- Do not update `Gallery` from `app.load`; it can trigger Gradio/Svelte `flush` loops and freeze tabs.
+- Keep hidden bridge components present in the DOM; Gradio may destroy components marked only as `visible=False`.
+- Keep global JavaScript listeners narrow and guarded.
+- Test tab switching after any JS, gallery, dataframe or `app.load` change.
+
+---
+
+## Requirements
+
+Main dependencies include:
+
+- `gradio`
+- `pandas`
+- `plotly`
+- `Pillow`
+- `requests`
+- `deep-translator`
+- `imagehash`
+- `opencv-python`
+
+See `requirements.txt` for the exact install list.
+
+---
+
+## License
+
+Free to use and modify for personal and professional AI dataset workflows.
+
+---
+
+## Credits
+
+Built for practical LoRA dataset preparation, local AI captioning, and fast caption cleanup workflows.
