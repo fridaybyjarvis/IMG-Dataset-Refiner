@@ -41,31 +41,26 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 
 ## Preview
 
-Place your screenshots in the `screenshots demo/` folder, then update the image links below.
 
 ### Main Workspace
 
-![Main workspace preview](screenshots%20demo/01-main-workspace.png)
+![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/1.jpeg)
 
-> Suggested screenshot: full desktop view showing the left gallery, center editor and right custom library.
 
 ### AI Assistant
 
-![AI assistant preview](screenshots%20demo/02-ai-assistant.png)
+![AI assistant preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/4.jpeg?raw=true)
 
-> Suggested screenshot: local AI backend settings, LM Studio controls and action selector.
 
 ### Export & Recipe
 
-![Export recipe preview](screenshots%20demo/03-export-recipe.png)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/5.jpeg?raw=true)
 
-> Suggested screenshot: recipe table, balancing strategy, simulation/export result.
 
 ### Advanced Analytics
 
-![Advanced analytics preview](screenshots%20demo/04-analytics.png)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/3.jpeg?raw=true)
 
-> Suggested screenshot: co-occurrence matrix, resolution plot, exclusion matrix and contradiction hunter.
 
 ---
 
@@ -119,6 +114,8 @@ Place your screenshots in the `screenshots demo/` folder, then update the image 
 - AI-generated global recipe from existing captions.
 
 ### LM Studio Controls
+
+![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/LM%20Studio%20-%20how%20find%20API.png?raw=true)
 
 - Refresh available LM Studio models.
 - Favorite VLM and LLM model selectors.
