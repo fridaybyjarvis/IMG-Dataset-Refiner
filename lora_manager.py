@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlparse
 import plotly.express as px
 import pandas as pd
 from collections import Counter, defaultdict
+from difflib import SequenceMatcher
 from PIL import Image
 
 try:
@@ -2091,20 +2092,328 @@ def _caption_tags(caption):
             tags.append(tag)
     return tags
 
+# Limites pour qu'un "mot-clé" reste un vrai mot-clé et pas une phrase
+# entière recopiée par le LLM. Volontairement permissif pour les concepts
+# multi-mots type "pup play mask black" mais strict sur les phrases.
+KEYWORD_MAX_WORDS = 6
+KEYWORD_MAX_CHARS = 50
+
+# Indices qu'un fragment est une phrase descriptive et non un tag.
+_PHRASE_HINTS = re.compile(
+    r"\b(the\s+image|this\s+image|the\s+photo|the\s+picture|"
+    r"il\s+y\s+a|on\s+voit|l[ae]\s+photo|cette\s+image|"
+    r"appears\s+to|seems\s+to|is\s+wearing|is\s+sitting|is\s+standing|"
+    r"is\s+holding|in\s+the\s+background|the\s+overall|the\s+lighting|"
+    r"se\s+trouve|porte\s+un|tient\s+un|en\s+arri[èe]re|au\s+fond)\b",
+    re.I,
+)
+
+def _is_valid_keyword(tag):
+    """Filtre un fragment : doit ressembler à un mot-clé (court, sans verbe conjugué de description)."""
+    if not tag:
+        return False
+    t = tag.strip()
+    if not t:
+        return False
+    # Longueur en mots et en caractères
+    words = t.split()
+    if len(words) > KEYWORD_MAX_WORDS:
+        return False
+    if len(t) > KEYWORD_MAX_CHARS:
+        return False
+    # Trop court : un seul caractère, pas pertinent
+    if len(t) < 2:
+        return False
+    # Phrase descriptive détectée par tournures typiques de captions VLM
+    if _PHRASE_HINTS.search(t):
+        return False
+    # Phrase terminée par un point (sauf abréviations très courtes)
+    if t.rstrip().endswith(".") and len(words) > 1:
+        return False
+    return True
+
+# Triggers LoRA fréquents : majuscules/minuscules mélangées avec chiffres,
+# underscores, ou patterns "leetspeak" type "D4lle", "photosh00tsP0ses".
+_TRIGGER_HINT = re.compile(r"[A-Za-z].*[0-9]|[0-9].*[A-Za-z]|_")
+
+def _looks_like_trigger(tag):
+    """Heuristique pour reconnaître un trigger word/concept LoRA (à mettre en tête de recette)."""
+    if not tag or " " in tag.strip():
+        return False  # la plupart des triggers sont en un seul "mot"
+    t = tag.strip()
+    if len(t) < 3 or len(t) > 30:
+        return False
+    return bool(_TRIGGER_HINT.search(t))
+
+# Stopwords bilingues FR/EN pour l'extraction de n-grams sur prose libre.
+# Volontairement compact : on veut filtrer les determinants, prepositions,
+# verbes auxiliaires/copules tres frequents qui n'apportent rien comme tag.
+_STOPWORDS = frozenset([
+    # Anglais
+    "a", "an", "the", "this", "that", "these", "those",
+    "is", "are", "was", "were", "be", "been", "being", "am",
+    "has", "have", "had", "having",
+    "do", "does", "did", "doing",
+    "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+    "and", "or", "but", "nor", "so", "yet", "if", "then", "than",
+    "as", "of", "in", "on", "at", "to", "for", "with", "by", "from",
+    "into", "onto", "out", "up", "down", "over", "under", "above", "below",
+    "between", "through", "during", "before", "after",
+    "he", "she", "it", "we", "they", "you", "i", "me", "him", "her", "us", "them",
+    "his", "hers", "its", "their", "our", "your", "my", "mine", "yours", "theirs", "ours",
+    "who", "whom", "which", "what", "when", "where", "why", "how",
+    "there", "here", "very", "more", "most", "less", "least", "much", "many", "some", "any", "all",
+    "also", "just", "only", "even", "still", "again", "ever", "never",
+    "appears", "seems", "looks", "shows", "shown", "showing", "showed",
+    "wearing", "sitting", "standing", "holding", "lying", "covered", "covering",
+    "image", "picture", "photo", "scene",
+    "overall", "background", "foreground",
+    # Francais
+    "le", "la", "les", "un", "une", "des", "du", "de", "d", "l",
+    "ce", "cet", "cette", "ces", "ça", "ca",
+    "est", "sont", "était", "etait", "étaient", "etaient", "etre", "être", "été", "ete",
+    "ont", "avait", "avaient", "avoir", "eu",
+    "et", "ou", "mais", "ni", "donc", "car",
+    "qui", "que", "quoi", "dont", "où", "comme",
+    "il", "elle", "ils", "elles", "nous", "vous", "je", "tu", "se", "s",
+    "son", "sa", "ses", "leur", "leurs", "mon", "ma", "mes", "ton", "ta", "tes", "notre", "votre",
+    "au", "aux", "dans", "sur", "sous", "par", "pour", "vers", "avec", "sans",
+    "tres", "plus", "moins", "tout", "tous", "toute", "toutes", "même", "meme",
+    "aussi", "encore", "déjà", "deja", "ici",
+    "scène", "fond",
+    "porte", "tient", "montre", "semble", "apparaît", "apparait",
+    "ne", "pas", "n",
+])
+
+# Mots courts (< 3 lettres) qu'on garde quand meme car ils sont semantiques.
+_SHORT_KEEP = frozenset(["ai", "3d", "2d", "vfx", "cgi", "hdr", "uv", "ui", "ux"])
+
+# Tokens autorises : lettres (FR/EN), chiffres, tirets internes, apostrophe.
+_TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9'\-]{1,}", re.UNICODE)
+
+def _is_useful_token(tok):
+    """Un token est utile s'il n'est pas stopword et qu'il a une longueur correcte."""
+    t = tok.lower().strip("-'")
+    if not t or t in _STOPWORDS:
+        return False
+    if len(t) < 3 and t not in _SHORT_KEEP:
+        return False
+    return True
+
+def _extract_keyword_ngrams(caption, ngram_range=(1, 3)):
+    """Extrait des n-grams candidats depuis une caption en prose libre.
+    Decoupe en phrases, retire les stopwords, garde les sequences continues
+    de tokens utiles. Retourne 1-grams, 2-grams et 3-grams sans doublon.
+
+    Exemple sur 'The image shows a young man lying on the beach with his
+    tentacles wrapped around his body' :
+    -> young, man, beach, tentacles, body, young man, ...
+    """
+    if not caption:
+        return []
+    text = str(caption)
+    # On decoupe par ponctuation forte pour eviter de chevaucher des phrases
+    # qui n'ont rien a voir entre elles.
+    sentences = re.split(r"[.!?;:\n,()\[\]{}\"]+", text)
+    out = []
+    seen = set()
+    lo, hi = ngram_range
+    for sent in sentences:
+        tokens = _TOKEN_RE.findall(sent)
+        # On marque chaque token comme utile ou non, puis on extrait les
+        # n-grams qui ne contiennent QUE des tokens utiles (pas de stopword
+        # au milieu). Ca capture 'young man', 'wet suit', 'cloudy sky' mais
+        # pas 'man on beach' (car 'on' est stopword).
+        useful_flags = [_is_useful_token(t) for t in tokens]
+        n = len(tokens)
+        i = 0
+        while i < n:
+            if not useful_flags[i]:
+                i += 1
+                continue
+            # On etend le run de tokens utiles consecutifs
+            j = i
+            while j < n and useful_flags[j]:
+                j += 1
+            # On extrait tous les n-grams de longueur [lo, hi] dans ce run
+            run = tokens[i:j]
+            run_len = len(run)
+            for size in range(lo, hi + 1):
+                if size > run_len:
+                    break
+                for k in range(run_len - size + 1):
+                    ngram_tokens = run[k:k + size]
+                    ngram = " ".join(ngram_tokens)
+                    # Filtre final via _is_valid_keyword (taille, phrase hints)
+                    if not _is_valid_keyword(ngram):
+                        continue
+                    key = ngram.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(ngram)
+            i = j
+    return out
+
 def _shared_caption_candidates(dataset):
+    """Compte les mots-clés partagés entre captions, en ignorant les fragments
+    qui ne ressemblent pas à des tags (phrases longues, descriptions VLM).
+
+    Deux passes :
+    1) Split par virgule (efficace pour les captions de type 'tag1, tag2, ...').
+    2) Extraction de n-grams (1, 2 et 3 mots) pour les captions en prose pure
+       type VLM ('The image shows a young man lying on the beach...').
+    Les deux passes sont fusionnees et triees par frequence inter-images.
+    """
     counts = Counter()
     canonical = {}
     for item in dataset or []:
         seen = set()
-        for tag in _caption_tags(item.get("caption", "")):
+        caption = item.get("caption", "")
+        # Passe 1 : tags separes par virgules
+        for tag in _caption_tags(caption):
+            if not _is_valid_keyword(tag):
+                continue
             key = tag.lower()
             if key in seen:
                 continue
             seen.add(key)
             counts[key] += 1
             canonical.setdefault(key, tag)
+        # Passe 2 : n-grams extraits de la prose
+        for ngram in _extract_keyword_ngrams(caption):
+            key = ngram.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            counts[key] += 1
+            canonical.setdefault(key, ngram)
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], canonical.get(kv[0], kv[0])))
     return [(canonical.get(key, key), count) for key, count in ranked]
+
+def _detect_trigger_words(dataset, candidates):
+    """Repère les tags ressemblant à des triggers LoRA dans les premières positions
+    de captions et parmi les candidats. Retourne une liste ordonnée par fréquence."""
+    triggers = []
+    seen = set()
+    # 1) Premier tag de chaque caption : très souvent le trigger
+    head_counts = Counter()
+    for item in dataset or []:
+        tags = _caption_tags(item.get("caption", ""))
+        for t in tags[:2]:  # on tolère trigger sur position 1 ou 2
+            if _looks_like_trigger(t):
+                head_counts[t.lower()] += 1
+    # On classe par fréquence en tête
+    canonical_head = {}
+    for item in dataset or []:
+        for t in _caption_tags(item.get("caption", ""))[:2]:
+            canonical_head.setdefault(t.lower(), t)
+    for key, _ in head_counts.most_common():
+        canonical = canonical_head.get(key, key)
+        if canonical.lower() not in seen:
+            triggers.append(canonical)
+            seen.add(canonical.lower())
+    # 2) Filet de sécurité : triggers détectés dans les candidats globaux
+    for tag, _ in candidates:
+        if _looks_like_trigger(tag) and tag.lower() not in seen:
+            triggers.append(tag)
+            seen.add(tag.lower())
+    return triggers
+
+# --- Deduplication intelligente de la recette finale ---
+# Tags "trop generiques" pour rester en doublon avec leur version specifique.
+# Ex: "AI" est rarement utile seul si "AI generated" est present, mais "dark"
+# garde sa valeur meme si "dark mysterious" est present (concepts distincts).
+_GENERIC_SHORT_TAGS = frozenset([
+    "ai", "art", "photo", "image", "picture", "shot", "view",
+    "man", "woman", "person", "people", "body", "face", "head",
+    "color", "colour", "style", "look", "mood", "tone",
+])
+
+def _normalize_tag_for_dedup(tag):
+    """Normalisation pour comparer des variantes orthographiques.
+    Met en minuscules, retire ponctuation legere et pluriels simples."""
+    t = tag.lower().strip()
+    # Retire ponctuation et separateurs internes (D4lle, Dall-e, Dall_e -> meme racine)
+    t = re.sub(r"[\-_\.\s]+", "", t)
+    # Pluriel anglais simple
+    if t.endswith("ies") and len(t) > 4:
+        t = t[:-3] + "y"
+    elif t.endswith("es") and len(t) > 4:
+        t = t[:-2]
+    elif t.endswith("s") and len(t) > 3 and not t.endswith("ss"):
+        t = t[:-1]
+    # Leetspeak basique : remplace chiffres frequents par leur lettre
+    leet = {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a"}
+    t = "".join(leet.get(c, c) for c in t)
+    return t
+
+def _are_orthographic_variants(a, b, threshold=0.82):
+    """True si a et b sont des variantes orthographiques tres proches
+    (ex: 'D4lle' vs 'Dall-e' apres normalisation leetspeak + ponctuation)."""
+    na, nb = _normalize_tag_for_dedup(a), _normalize_tag_for_dedup(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    # Difference de longueur trop grande : pas des variantes
+    if abs(len(na) - len(nb)) > max(2, min(len(na), len(nb)) // 3):
+        return False
+    return SequenceMatcher(None, na, nb).ratio() >= threshold
+
+def _deduplicate_recipe(tags, freq_lookup=None):
+    """Deduplique une liste de tags en 3 passes :
+    1) Doublons exacts (deja garantis par seen_low en amont, mais on re-verifie).
+    2) Variantes orthographiques (D4lle/Dall-e, leetspeak/typos).
+    3) Inclusion stricte d'un tag court generique dans un tag plus long
+       (AI / AI generated, photo / black photo).
+
+    `freq_lookup` (dict tag.lower() -> count) sert a choisir laquelle garder :
+    on prefere la variante la plus frequente, sinon la plus longue, sinon la
+    premiere rencontree.
+    """
+    if not tags:
+        return []
+    freq = freq_lookup or {}
+
+    def _score(t):
+        # Plus le score est haut, plus le tag est "interessant" a garder.
+        return (freq.get(t.lower(), 0), len(t))
+
+    result = []
+    for tag in tags:
+        t_low = tag.lower()
+        merged = False
+        for i, kept in enumerate(result):
+            k_low = kept.lower()
+            # Passe 1 : identique (case-insensitive)
+            if t_low == k_low:
+                merged = True
+                break
+            # Passe 2 : variantes orthographiques (D4lle vs Dall-e)
+            if _are_orthographic_variants(tag, kept):
+                # On garde celle qui a le meilleur score
+                if _score(tag) > _score(kept):
+                    result[i] = tag
+                merged = True
+                break
+            # Passe 3 : inclusion stricte d'un generique court
+            kept_words = k_low.split()
+            tag_words = t_low.split()
+            # Le candidat court est-il un generique inclus dans le plus long ?
+            if len(tag_words) == 1 and tag_words[0] in _GENERIC_SHORT_TAGS:
+                if tag_words[0] in kept_words and len(kept_words) > 1:
+                    merged = True  # on garde le plus long deja en place
+                    break
+            if len(kept_words) == 1 and kept_words[0] in _GENERIC_SHORT_TAGS:
+                if kept_words[0] in tag_words and len(tag_words) > 1:
+                    # Le nouveau est plus specifique : on remplace
+                    result[i] = tag
+                    merged = True
+                    break
+        if not merged:
+            result.append(tag)
+    return result
 
 def _parse_ai_recipe_tags(ai_text, allowed_tags, limit):
     allowed_map = {tag.lower(): tag for tag in allowed_tags}
@@ -2119,6 +2428,10 @@ def _parse_ai_recipe_tags(ai_text, allowed_tags, limit):
         if not tag:
             continue
         tag = re.sub(r"^(keywords?|mots-cl[ée]s?|tags?)\s*:\s*", "", tag, flags=re.I).strip()
+        # Garde-fou final : on rejette les fragments qui ne ressemblent pas
+        # à un mot-clé (phrase recopiée par un LLM trop bavard).
+        if not _is_valid_keyword(tag):
+            continue
         key = tag.lower()
         if key in allowed_map:
             tag = allowed_map[key]
@@ -2149,26 +2462,48 @@ def auto_fill_recipe_from_ai(dataset, count, api_backend, api_url, llm_model, te
         gr.Warning(msg)
         return gr.update(), msg
 
+    # Triggers détectés en amont : on les épinglera en tête, quoi que dise le LLM.
+    triggers = _detect_trigger_words(dataset, candidates)
+
     dataset_dir = os.path.dirname(dataset[0].get("img_path", "")) if dataset else ""
     dataset_name = os.path.basename(dataset_dir) or "dataset"
     total = len(dataset)
-    candidate_limit = max(limit * 4, 80)
+    candidate_limit = max(limit * 5, 120)
     candidate_lines = "\n".join(
-        f"- {tag} ({count}/{total} images)" for tag, count in candidates[:candidate_limit]
+        f"- {tag} ({count}/{total})" for tag, count in candidates[:candidate_limit]
     )
     fallback_tags = [tag for tag, _ in candidates[:limit]]
+    trigger_hint = (
+        f"\nTriggers detectes a placer en TETE: {', '.join(triggers[:3])}\n"
+        if triggers else ""
+    )
+    # Prompt strict : on impose le format, on donne un exemple positif et
+    # un exemple negatif, on interdit explicitement les descriptions VLM.
     prompt = (
-        "Tu es un assistant expert en datasets LoRA/Flux/Stable Diffusion.\n"
+        "Tu es un assistant expert en datasets LoRA / Flux / Stable Diffusion.\n"
         f"Dataset: {dataset_name}\n"
-        f"Nombre d'images/captions analysees: {total}\n"
-        f"Objectif: choisir les {limit} mots-cles les plus utiles pour remplir une Recette Globale.\n"
-        "Contraintes strictes:\n"
-        "- Reponds uniquement par une liste separee par des virgules.\n"
-        "- Utilise les mots-cles candidats ci-dessous, car ils viennent de toutes les captions du dataset.\n"
-        "- Priorise les mots-cles les plus partages en commun entre les images.\n"
-        "- Inclus le trigger word/concept principal si tu le reconnais dans le nom du dataset ou dans les captions.\n"
-        "- Ne donne aucune explication.\n\n"
-        f"Mots-cles candidats avec frequence:\n{candidate_lines}"
+        f"Nombre d'images analysees: {total}\n"
+        f"Objectif: produire une RECETTE GLOBALE de {limit} mots-cles au maximum.\n"
+        "\n"
+        "REGLES STRICTES (obligatoires):\n"
+        "1. Reponds UNIQUEMENT par une seule ligne de mots-cles separes par des virgules.\n"
+        "2. Chaque mot-cle fait MOINS DE 6 MOTS (ex: 'pup play mask', 'studio lighting').\n"
+        "3. INTERDIT de recopier des phrases complètes comme 'The image shows...' ou 'a portrait of a woman with...'.\n"
+        "4. INTERDIT d'inclure des verbes conjugues de description ('is wearing', 'appears to be', 'porte un', etc.).\n"
+        "5. Place le trigger word/concept (s'il existe) EN PREMIERE position.\n"
+        "6. Choisis les mots-cles les plus partages entre images, puis les concepts distinctifs.\n"
+        "7. INTERDIT les doublons : un seul mot-cle par concept. Pas de 'AI' + 'AI generated', pas de 'Dall-e' + 'Dall-e style', pas de 'D4lle' + 'Dall-e' (memes triggers en variantes orthographiques).\n"
+        "8. Aucune explication, aucun titre, aucun prefixe type 'Keywords:'.\n"
+        "\n"
+        "EXEMPLE DE BONNE REPONSE:\n"
+        "D4lle, Dall-e style, AI generated, romantic atmosphere, dramatic lighting, portrait, dark background\n"
+        "\n"
+        "EXEMPLE DE MAUVAISE REPONSE (a ne pas faire):\n"
+        "D4lle, The image is a close-up portrait of a woman with bright yellow hair, AI generated\n"
+        f"{trigger_hint}"
+        f"\nMots-cles candidats (frequence sur le dataset):\n{candidate_lines}\n"
+        "\n"
+        f"Reponds maintenant avec UNE SEULE LIGNE de {limit} mots-cles maximum, separes par des virgules."
     )
 
     ai_response = call_ai_api(
@@ -2181,15 +2516,48 @@ def auto_fill_recipe_from_ai(dataset, count, api_backend, api_url, llm_model, te
     else:
         gr.Warning(str(ai_response or m.get("error", "Error.")))
 
-    for tag in fallback_tags:
-        if len(picked) >= limit:
-            break
-        if tag.lower() not in {x.lower() for x in picked}:
-            picked.append(tag)
+    # Table de frequences (utilisee par la dedup pour choisir la meilleure variante)
+    freq_lookup = {tag.lower(): count for tag, count in candidates}
 
-    recipe = ", ".join(picked[:limit])
+    # On assemble une liste large (triggers + IA + fallback) SANS limiter,
+    # puis on deduplique intelligemment, puis on coupe a `limit`. Ainsi la
+    # dedup peut absorber les variantes et le pool reste assez riche pour
+    # remplir la recette demandee.
+    raw = []
+    seen_exact = set()
+    # 1) Triggers detectes en TETE (priorite absolue)
+    for trig in triggers:
+        if trig.lower() in seen_exact:
+            continue
+        raw.append(trig)
+        seen_exact.add(trig.lower())
+    # 2) Selection IA
+    for tag in picked:
+        if tag.lower() in seen_exact:
+            continue
+        raw.append(tag)
+        seen_exact.add(tag.lower())
+    # 3) Filet de securite : candidats les plus partages
+    # On prend large pour avoir une marge apres dedup.
+    for tag in [t for t, _ in candidates[:limit * 3]]:
+        if tag.lower() in seen_exact:
+            continue
+        raw.append(tag)
+        seen_exact.add(tag.lower())
+
+    # Dedup variantes orthographiques + inclusions generiques
+    deduped = _deduplicate_recipe(raw, freq_lookup=freq_lookup)
+
+    # On reordonne pour replacer les triggers en tete (la dedup peut les avoir
+    # remplaces par une variante; on garantit le placement en tete).
+    trigger_set = {_normalize_tag_for_dedup(t) for t in triggers}
+    head = [t for t in deduped if _normalize_tag_for_dedup(t) in trigger_set]
+    tail = [t for t in deduped if _normalize_tag_for_dedup(t) not in trigger_set]
+    final = (head + tail)[:limit]
+
+    recipe = ", ".join(final)
     msg = m.get("ai_recipe_success", "✅ AI recipe generated from {count} captions: {tags} keywords.").format(
-        count=total, tags=len(picked[:limit])
+        count=total, tags=len(final)
     )
     gr.Info(msg)
     return recipe, msg

@@ -1,8 +1,57 @@
 # **📝 Changelog \- IMG Dataset Refiner**
 
-## **v4.3.2 Pro (UI/UX — Panels thématiques, Favoris repositionnés, double toggle latéral)**
+## **v4.3.2 Pro (UI/UX — Panels thématiques, Favoris repositionnés, double toggle latéral, Recette IA durcie)**
 
-Cette mise à jour est purement **esthétique et ergonomique**. Aucune logique métier, aucun câblage d'événement (hors le toggle du panneau droit) et aucun JavaScript custom critique n'a été modifié. La structure Gradio reste fonctionnellement identique à v4.3.1, ce qui préserve la stabilité acquise sur les onglets et la galerie.
+Cette mise à jour est principalement **esthétique et ergonomique**, plus une **correction comportementale ciblée** sur la génération de recette globale par IA. Aucune logique métier critique n'a été touchée. La structure Gradio reste fonctionnellement identique à v4.3.1, ce qui préserve la stabilité acquise sur les onglets et la galerie.
+
+### **🤖 Recette IA : filtre strict + triggers en tête + extraction n-grams (correction comportementale)**
+
+**Symptôme corrigé** : le bouton *🤖 Remplir par IA depuis les captions* pouvait renvoyer une recette polluée par des phrases descriptives complètes recopiées par le LLM (typiquement les sorties VLM type `"The image is a close-up portrait of a woman with..."`). Au lieu de mots-clés courts, on obtenait des pavés inutilisables comme recette globale. **Second cas non couvert au début** : pour des captions en **prose pure** (sans virgules type tag, comme les sorties brutes des VLM type `"The image shows a young man lying on the beach with his tentacles wrapped around his body. He is wearing a black wet suit..."`), aucun mot-clé n'était extrait du tout — l'IA n'avait quasiment rien à choisir.
+
+**Causes identifiées** :
+
+1. `_shared_caption_candidates` splittait les captions sur la virgule sans valider la longueur — une description sans virgule devenait un seul "tag" géant rejeté ensuite, donc zéro candidat exploitable.
+2. Le prompt envoyé au LLM autorisait implicitement les phrases longues.
+3. Le parser `_parse_ai_recipe_tags` filtrait par appartenance à `allowed_tags` mais sans contrôle de format.
+4. Le trigger word/concept n'était pas explicitement placé en tête.
+
+**Corrections apportées** :
+
+* Nouveau filtre `_is_valid_keyword(tag)` (constantes `KEYWORD_MAX_WORDS = 6`, `KEYWORD_MAX_CHARS = 50`) appliqué à la fois côté candidats et côté parser. Rejette : phrases > 6 mots, tournures VLM (`The image`, `appears to`, `is wearing`, `il y a`, `on voit`, `porte un`, etc.), fragments terminés par un point.
+* Nouvelle fonction `_detect_trigger_words(dataset, candidates)` qui repère les triggers LoRA (patterns leetspeak `D4lle`, `photosh00tsP0ses-S2`, identifiants à underscore `my_concept`, `ohwx_man`) en début de captions, et **les épingle en première position de la recette générée**, indépendamment de ce que renvoie le LLM.
+* **Nouveau** : extracteur de **n-grams (1, 2 et 3 mots)** `_extract_keyword_ngrams(caption)` qui fonctionne sur les **captions en prose pure** (sorties VLM non structurées). Découpe la caption en phrases via la ponctuation, tokenise, retire les stopwords bilingues FR/EN (`the`, `is`, `a`, `on`, `le`, `la`, `est`, `dans`...) et extrait toutes les séquences continues de tokens utiles. Sur une caption comme `"The image shows a young man lying on the beach with his tentacles wrapped around his body. He is wearing a black wet suit..."`, l'extracteur produit désormais : `young man`, `beach`, `tentacles`, `black wet suit`, `wet suit`, `purple`, `cloudy sky`, `dark`, `mysterious`, etc. Avec plusieurs captions du même dataset, ces n-grams sont comptés inter-images, ce qui fait remonter naturellement les concepts vraiment partagés en tête de la liste de candidats envoyée au LLM.
+* Les deux passes (split par virgule + extraction n-grams) sont **fusionnées** dans `_shared_caption_candidates`. Aucune régression sur le format `tag1, tag2, tag3` historique — il continue de fonctionner exactement comme avant, le n-gram ajoute juste de la matière quand la prose est pure.
+* Prompt LLM entièrement réécrit : règles strictes numérotées, exemple de bonne réponse, exemple de mauvaise réponse, mention explicite du nombre maximum de mots par tag, interdiction des verbes conjugués de description, et injection des triggers détectés en hint.
+* `candidate_limit` étendu (`max(limit * 5, 120)` au lieu de `max(limit * 4, 80)`) pour que le LLM voie davantage de contexte sur les concepts distinctifs rares.
+
+**Résultat attendu** sur les deux scénarios problématiques :
+
+* **Dataset Dalle (format tags)** : `D4lle, Dall-e style, AI generated, romantic atmosphere, dramatic lighting, portrait, dark background, ...` au lieu d'un pavé contenant des phrases entières recopiées.
+* **Dataset tentacles (format prose VLM)** : à partir d'un ensemble de captions descriptives, l'IA reçoit maintenant les n-grams `young man`, `wet suit`, `black wet suit`, `tentacles`, `purple tentacles`, `cloudy sky`, `dark`, `mysterious` triés par fréquence inter-images, et peut produire une vraie recette globale.
+
+Le trigger (s'il existe) est forcé en tête, les phrases descriptives sont systématiquement rejetées, et l'analyse repart automatiquement derrière comme avant grâce au `.success()` qui clique `hidden_calc_btn`.
+
+### **🧹 Déduplication intelligente de la recette finale (anti-doublons)**
+
+**Symptôme corrigé** : le LLM produisait parfois des recettes contenant des **variantes du même concept** ou des inclusions évidentes, par exemple `D4lle, AI, AI generated, Dall-e, Dall-e style` — 5 entrées dont 3 redondantes.
+
+**Corrections apportées** :
+
+* Nouvelle fonction `_normalize_tag_for_dedup(tag)` qui rapproche les variantes orthographiques : minuscules, suppression de la ponctuation interne (tirets, underscores, espaces), normalisation pluriel (`portraits` → `portrait`, `photoshoots` → `photoshoot`) et **leetspeak** (`0→o, 1→i, 3→e, 4→a, 5→s, 7→t`). Résultat : `D4lle`, `Dall-e` et `Dalle` se normalisent tous en `dalle` et sont reconnus comme identiques.
+* Nouvelle fonction `_are_orthographic_variants(a, b, threshold=0.82)` qui utilise `difflib.SequenceMatcher` sur les formes normalisées. Seuil prudent (82 %) pour ne pas fusionner des concepts vraiment distincts comme `studio lighting` vs `dramatic lighting`.
+* Nouvelle fonction `_deduplicate_recipe(tags, freq_lookup)` qui applique 3 passes : doublons exacts, variantes orthographiques (mergées en gardant la variante la plus fréquente sur le dataset), et **inclusion stricte d'un tag court "générique"** dans un tag plus long. La liste `_GENERIC_SHORT_TAGS` couvre les mots trop vagues pour rester seuls quand une version spécifique existe : `ai`, `art`, `photo`, `image`, `man`, `woman`, `body`, `style`, `look`, `mood`, etc. — `dark` n'y est **pas** car il garde sa valeur même à côté de `dark mysterious`.
+* Règle 7 ajoutée au prompt LLM : interdiction explicite des doublons, avec exemples (`AI` + `AI generated`, `Dall-e` + `Dall-e style`, `D4lle` + `Dall-e`).
+* L'assemblage final récupère un pool large (triggers + IA + fallback × 3) puis déduplique, puis coupe à `limit` — garantit que la recette demandée a bien le bon nombre de mots-clés **après** dédup, et non avant.
+
+**Résultat démontré** sur le cas exact rapporté :
+* Avant : `D4lle, AI, AI generated, Dall-e, Dall-e style`
+* Après : `D4lle, AI generated, Dall-e style`
+
+Concepts distincts préservés (testé) :
+* `dark` + `dark mysterious` → tous deux gardés (`dark` n'est pas générique)
+* `purple` + `purple tentacles` → tous deux gardés
+* `studio lighting` + `dramatic lighting` → tous deux gardés (vraiment différents)
+* `D4lle` + `Dall-e style` → tous deux gardés (similarité 67 %, sous le seuil)
 
 ### **🎨 Encarts colorés thématiques (CSS uniquement)**
 
@@ -39,7 +88,7 @@ La précédente tentative en accordion vertical a été remplacée par un **togg
 * Aucun nouveau câblage `app.load`, aucune mise à jour frontend de la `Gallery`, aucun listener JS global agressif — les contournements Gradio/Svelte documentés restent intacts.
 * Le nouveau JS de toggle droit est **strictement local** : il agit uniquement sur deux IDs (`#right_panel`, `#toggle_right_btn`) et ne touche à aucun autre élément.
 * Nouvelle clé `hide_lib` ajoutée symétriquement dans `languages/fr.json` et `languages/en.json`. La clé temporaire `lib_panel_acc` (de la version intermédiaire à accordion vertical) a été retirée. Toutes les autres clés sont inchangées (229 communes, 0 dérive).
-* Tests passés : `python -m py_compile lora_manager.py` OK, AST parse OK, JSON FR/EN parseables et symétriques, tous les composants critiques toujours définis exactement une fois.
+* Tests passés : `python -m py_compile lora_manager.py` OK, AST parse OK, JSON FR/EN parseables et symétriques, tous les composants critiques toujours définis exactement une fois, filtre `_is_valid_keyword` testé contre l'exemple problématique réel et rejette correctement les phrases descriptives.
 
 ### **🧪 À vérifier après mise à jour**
 
@@ -49,6 +98,7 @@ La précédente tentative en accordion vertical a été remplacée par un **togg
 * Cliquer les deux : le centre occupe presque toute la largeur — utile pour les longues captions et l'édition fine.
 * Déplier **Favoris** dans la zone jaune et choisir un favori : le dataset doit se charger comme avant.
 * Plier / déplier l'**Assistant de Traduction** ne doit pas perturber l'éditeur de caption ni les raccourcis clavier.
+* Avec un dataset chargé, cliquer **🤖 Remplir par IA depuis les captions** : la recette générée doit être une **vraie liste de mots-clés courts**, avec le trigger (s'il existe) en première position, et l'analyse des données doit se relancer derrière automatiquement.
 
 ---
 
