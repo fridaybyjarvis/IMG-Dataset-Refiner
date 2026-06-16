@@ -59,22 +59,22 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 
 ### Main Workspace
 
-![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/1.jpeg)
+![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/2c11b933b7aa6ca2f9abeb69668568d8adecca68/screenshots%20demo/v4.4.6/1.png)
 
 
 ### AI Assistant
 
-![AI assistant preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/4.jpeg?raw=true)
+![AI assistant preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/2c11b933b7aa6ca2f9abeb69668568d8adecca68/screenshots%20demo/v4.4.6/4.png)
 
 
 ### Export & Recipe
 
-![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/5.jpeg?raw=true)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/2c11b933b7aa6ca2f9abeb69668568d8adecca68/screenshots%20demo/v4.4.6/6.png)
 
 
 ### Advanced Analytics
 
-![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/3.jpeg?raw=true)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.4.6/5.png)
 
 
 ---
