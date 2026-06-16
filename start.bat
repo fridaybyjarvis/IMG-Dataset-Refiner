@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  IMG Dataset Refiner v4.1 Pro - Lancement
+REM  IMG Dataset Refiner v4.4.6 Pro - Lancement
 REM  Active le venv et lance lora_manager.py
 REM ============================================================
 
@@ -23,12 +23,12 @@ call venv\Scripts\activate.bat
 
 echo.
 echo ============================================================
-echo   Lancement de IMG Dataset Refiner v4.1 Pro
+echo   Lancement de IMG Dataset Refiner v4.4.6 Pro
 echo   (le navigateur va s'ouvrir automatiquement)
 echo ============================================================
 echo.
 
-python lora_manager.py
+"%~dp0venv\Scripts\python.exe" lora_manager.py
 
 REM En cas de crash, garder la fenetre ouverte
 if errorlevel 1 (

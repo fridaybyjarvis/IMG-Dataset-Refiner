@@ -1,7 +1,10 @@
-# IMG Dataset Refiner v4.3 Pro
+# IMG Dataset Refiner
 
 <div align="center">
   <img src="logotype/logo.jpg" alt="IMG Dataset Refiner logo" width="240">
+
+  **✨[Sponsor this project](https://www.paypal.com/paypalme/NyxAwroo)**
+
 
   <br>
 
@@ -27,7 +30,7 @@
 
 ## Overview
 
-**IMG Dataset Refiner** is a local Gradio application for building clean, balanced and training-ready image datasets. It helps you load folders of images and `.txt` captions, edit captions quickly, batch-apply keywords, pre-process images, detect duplicates, analyze dataset bias, and export curated subsets with balancing rules.
+**IMG Dataset Refiner** is a local Gradio application for building clean, balanced and training-ready image datasets. It helps you load folders of images and `.txt` captions, edit captions quickly, translate captions in both directions, batch-apply keywords, pre-process and manually crop images, detect duplicates, analyze dataset bias, and export curated subsets with balancing rules.
 
 It is built for creators training:
 
@@ -39,33 +42,40 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 
 ---
 
+## Highlights in v4.4.6 Pro
+
+- Premium compact dark UI with a denser workspace, sticky gallery and cleaner dataset loading header.
+- Bidirectional live translation: edit the English caption or edit the translated preview and sync back to English.
+- Manual image-by-image crop tool with fixed/free ratios, mouse-wheel zoom, keyboard navigation and instant overwrite.
+- Caption CSV and Markdown export/import directly from the current dataset folder.
+- PNG export support in pre-processing, alongside WebP and JPEG.
+- Editable AI actions: create, modify, delete, import and export custom actions as JSON.
+- Favorites, recent paths, gallery selection and first-image loading have been hardened for faster daily use.
+
+---
+
 ## Preview
 
-Place your screenshots in the `screenshots demo/` folder, then update the image links below.
 
 ### Main Workspace
 
-![Main workspace preview](screenshots%20demo/01-main-workspace.png)
+![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/1.jpeg)
 
-> Suggested screenshot: full desktop view showing the left gallery, center editor and right custom library.
 
 ### AI Assistant
 
-![AI assistant preview](screenshots%20demo/02-ai-assistant.png)
+![AI assistant preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/4.jpeg?raw=true)
 
-> Suggested screenshot: local AI backend settings, LM Studio controls and action selector.
 
 ### Export & Recipe
 
-![Export recipe preview](screenshots%20demo/03-export-recipe.png)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/5.jpeg?raw=true)
 
-> Suggested screenshot: recipe table, balancing strategy, simulation/export result.
 
 ### Advanced Analytics
 
-![Advanced analytics preview](screenshots%20demo/04-analytics.png)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/3.jpeg?raw=true)
 
-> Suggested screenshot: co-occurrence matrix, resolution plot, exclusion matrix and contradiction hunter.
 
 ---
 
@@ -77,18 +87,23 @@ Place your screenshots in the `screenshots demo/` folder, then update the image 
 - Drag and drop folders or files into the app.
 - Fallback folder-signature search when the browser hides absolute paths.
 - Persistent favorites for frequently used datasets.
+- Recent paths dropdown for quickly reopening previous datasets.
+- Favorites can load a dataset directly and keep the path field synchronized.
 - Natural sorting: `img1`, `img2`, `img10`.
 - Gradio `allowed_paths` support for external local folders.
 
 ### Caption Editing
 
 - Fast visual gallery with persistent column preference.
+- Sticky, resizable left gallery panel with compact selection controls.
 - Image viewer with caption editor.
 - Keyboard navigation with arrows and `PageUp` / `PageDown`.
 - `Ctrl+S` save shortcut.
 - Live word and token counters.
 - Highlight tracked tags from the global recipe.
-- Live translation preview and full-caption translation.
+- Bidirectional live translation preview: edit English, or edit the translated text and sync back to English.
+- Full-caption translation for the current image.
+- CSV and Markdown caption export/import for external AI captioning workflows.
 
 ### Batch Editing
 
@@ -115,10 +130,14 @@ Place your screenshots in the `screenshots demo/` folder, then update the image 
 - Concept isolator for LoRA subject separation.
 - Tag sorting and standardization.
 - Custom prompt templates.
+- Editable AI action presets with custom prompt, description, vision mode and injection mode.
+- Import/export custom AI actions through JSON.
 - Dataset profiling report with compact tag statistics.
 - AI-generated global recipe from existing captions.
 
 ### LM Studio Controls
+
+![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/LM%20Studio%20-%20how%20find%20API.png?raw=true)
 
 - Refresh available LM Studio models.
 - Favorite VLM and LLM model selectors.
@@ -132,9 +151,11 @@ Place your screenshots in the `screenshots demo/` folder, then update the image 
 - Smart face crop via OpenCV.
 - Center square crop.
 - Batch resize to common training resolutions.
-- WebP / JPEG output.
+- WebP / JPEG / PNG output.
 - Transparent-background flattening for PNGs.
 - Batch renaming for images and captions.
+- Manual crop tool for the current viewer image with free crop or fixed ratios.
+- Mouse-wheel zoom, drag-to-position, keyboard navigation and instant overwrite for rapid image-by-image cropping.
 
 ### Analytics
 
@@ -155,6 +176,13 @@ Place your screenshots in the `screenshots demo/` folder, then update the image 
 - Simulation before export.
 - Versioned export folders based on the dataset name.
 - Custom export suffix with `-Sx` / `-S1`, `-S2`, `-S3` behavior.
+
+### Caption CSV / Markdown Roundtrip
+
+- Export `Numéro`, `Fichier` and `Caption` for every image.
+- CSV and Markdown exports are written into the currently loaded dataset folder.
+- Import filled CSV or Markdown files through a drag-and-drop file input.
+- Captions are matched back to images by filename.
 
 ---
 
@@ -194,6 +222,7 @@ python lora_manager.py
 2. **Inspect and edit captions**
    - Use the gallery, viewer and caption editor.
    - Adjust gallery columns if needed; the setting is saved.
+   - Use live translation in either direction when refining captions across languages.
 
 3. **Clean in batch**
    - Remove duplicate tags, normalize commas and apply word-library actions.
@@ -201,10 +230,13 @@ python lora_manager.py
 4. **Use AI selectively**
    - Generate captions, clean hallucinations, standardize tags or build a global recipe.
 
-5. **Analyze**
+5. **Pre-process when needed**
+   - Resize, convert to WebP/JPEG/PNG, detect duplicates, move low-resolution images or manually crop the current image.
+
+6. **Analyze**
    - Check tag frequencies, heatmaps, contradictions and resolution distribution.
 
-6. **Simulate and export**
+7. **Simulate and export**
    - Tune the recipe table, simulate the result, then export a versioned clean dataset.
 
 ---
@@ -228,6 +260,7 @@ AI settings are stored in `ai_settings.json`.
 IMG Dataset Refiner/
 ├── lora_manager.py              # Main application: UI, backend logic, custom JS bridge
 ├── requirements.txt             # Python dependencies
+├── requirements-optional.txt    # Optional extras such as tiktoken
 ├── install.bat                  # Windows installer
 ├── start.bat                    # Windows launcher
 ├── Changelog.md                 # Release notes
@@ -235,8 +268,12 @@ IMG Dataset Refiner/
 ├── readme.md                    # GitHub documentation
 ├── SUGGESTIONS.md               # Optional improvement backlog
 ├── lora_recipes.json            # Saved global/export recipes
+├── ai_recipes.json              # Optional AI templates and custom AI actions
 ├── ai_settings.json             # Persistent AI backend/model settings
 ├── ui_settings.json             # Persistent UI preferences, including gallery columns
+├── favorites.json               # Optional saved dataset favorites
+├── tools/
+│   └── release_check.py         # Release smoke-check helper
 ├── languages/
 │   ├── fr.json                  # French UI strings
 │   └── en.json                  # English UI strings
@@ -245,7 +282,7 @@ IMG Dataset Refiner/
 └── screenshots demo/            # Place GitHub preview screenshots here
 ```
 
-Generated files such as `favorites.json`, `ai_recipes.json` and export folders may appear after using the app.
+Generated files such as `library.json`, `stats_exports/` and export folders may appear after using the app.
 
 ---
 
@@ -271,13 +308,14 @@ This project relies on a sensitive Gradio + JavaScript bridge. Before editing `l
 
 Important stability rules:
 
-- Do not pass `custom_js` through `launch(js=...)`.
 - Keep the custom JavaScript injection through `app.load(..., js=custom_js)`.
+- For Gradio 6+, also pass executable JS through `launch(js=f"({custom_js})();")` and keep the `window.__DIES_INJECTED` guard.
+- Do not replace `app.load(..., js=custom_js)` with only `launch(js=...)`; both paths are intentionally supported.
 - Do not combine `custom_js` and frontend component outputs in the same `app.load` event.
 - Do not update `Gallery` from `app.load`; it can trigger Gradio/Svelte `flush` loops and freeze tabs.
 - Keep hidden bridge components present in the DOM; Gradio may destroy components marked only as `visible=False`.
 - Keep global JavaScript listeners narrow and guarded.
-- Test tab switching after any JS, gallery, dataframe or `app.load` change.
+- Test tab switching after any JS, gallery, dataframe, manual crop or `app.load` change.
 
 ---
 
@@ -296,14 +334,17 @@ Main dependencies include:
 
 See `requirements.txt` for the exact install list.
 
+Optional extras are listed in `requirements-optional.txt`. For example, `tiktoken` enables a more accurate token counter, but the app keeps a fallback when it is not installed.
+
 ---
+### 💛 Support the project
+IMG Dataset Refiner is a free, open project developed on personal time. If it helps your Instagram workflow, you can support its development with a donation.
 
-## License
-
-Free to use and modify for personal and professional AI dataset workflows.
+**Donation link:** [PayPal](https://www.paypal.com/paypalme/NyxAwroo)
+// Donations help fund development time, testing, documentation and future improvements. Huge thanks to anyone who contributes 🙏
 
 ---
 
 ## Credits
 
-Built for practical LoRA dataset preparation, local AI captioning, and fast caption cleanup workflows.
+Made by NyxAwroo

@@ -32,6 +32,14 @@ try:
 except ImportError:
     HAS_IMAGEHASH = False
 
+# Import tiktoken pour un comptage de tokens CLIP précis
+try:
+    import tiktoken
+    _TIKTOKEN_ENC = tiktoken.get_encoding("cl100k_base")
+    HAS_TIKTOKEN = True
+except Exception:
+    HAS_TIKTOKEN = False
+
 # Import OpenCV pour le Smart Crop
 try:
     import cv2
@@ -55,6 +63,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 RECIPES_FILE = os.path.join(APP_DIR, "lora_recipes.json")
 AI_RECIPES_FILE = os.path.join(APP_DIR, "ai_recipes.json")
 FAVORITES_FILE = os.path.join(APP_DIR, "favorites.json")
+LIBRARY_FILE = os.path.join(APP_DIR, "library.json")
 AI_SETTINGS_FILE = os.path.join(APP_DIR, "ai_settings.json")
 UI_SETTINGS_FILE = os.path.join(APP_DIR, "ui_settings.json")
 LANGUAGES_DIR = os.path.join(APP_DIR, "languages")
@@ -63,6 +72,8 @@ DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
 DEFAULT_OPENAI_URL = "https://api.openai.com"
 DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com"
 DEFAULT_GEMINI_URL = "https://generativelanguage.googleapis.com"
+APP_VERSION = "v4.4.6 Pro"
+APP_TITLE = f"IMG Dataset Refiner {APP_VERSION}"
 VALID_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.webp')
 DEFAULT_AI_SETTINGS = {
     "api_backend": "Ollama",
@@ -73,6 +84,7 @@ DEFAULT_AI_SETTINGS = {
     "api_key": "",
     "temperature": 0.7,
     "context": 4096,
+    "timeout": 180,
     "system_prompt": "",
 }
 
@@ -172,178 +184,1461 @@ def import_language_file(uploaded_file, lang="FR"):
 # STYLES CSS NATIFS & JAVASCRIPT GLOBAL
 # ==========================================
 css_code = """
-/* Suppression totale des en-têtes Gradio */
+/* ======================================================
+   IMG Dataset Refiner — Premium control-room theme
+   Layout IDs and hidden bridge components are intentionally
+   preserved for Gradio/Svelte stability.
+   ====================================================== */
+
+:root {
+    --idr-bg: #090d12;
+    --idr-bg-2: #0d131a;
+    --idr-surface: #121922;
+    --idr-surface-2: #17212b;
+    --idr-surface-3: #1c2834;
+    --idr-border: #2a3746;
+    --idr-border-soft: rgba(148, 163, 184, 0.18);
+    --idr-text: #e7edf5;
+    --idr-muted: #9aa8b7;
+    --idr-muted-2: #738295;
+    --idr-teal: #2dd4bf;
+    --idr-amber: #f2b84b;
+    --idr-green: #65d46e;
+    --idr-blue: #60a5fa;
+    --idr-coral: #fb7185;
+    --idr-red: #f87171;
+    --idr-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+    --idr-shadow-soft: 0 8px 28px rgba(0, 0, 0, 0.26);
+    --idr-radius: 8px;
+}
+
+* { box-sizing: border-box !important; }
 .gradio-container header, .gradio-container-4-26-0 header, header { display: none !important; }
 footer { display: none !important; }
-html, body, gradio-app { margin: 0 !important; padding: 0 !important; background: #0b0f14 !important; }
-.gradio-container, .contain, main, .wrap { max-width: none !important; width: 100% !important; margin: 0 !important; }
-.gradio-container { padding: 8px 16px 16px 16px !important; min-height: 100vh !important; }
-.gradio-container .main.fillable, .gradio-container > .main, .gradio-container > main { max-width: none !important; padding: 0 !important; }
-#top_workspace { gap: 12px !important; align-items: flex-start !important; flex-wrap: nowrap !important; }
-#workbench_row { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 12px !important; align-items: stretch !important; }
-#workbench_row > div { min-width: 0 !important; }
-#center_panel { min-width: 420px !important; flex: 1 1 0 !important; width: auto !important; }
-#app_title h1 { font-size: 1.35rem !important; line-height: 1.15 !important; margin: 0 0 4px 0 !important; }
-#app_title p { margin: 0 0 6px 0 !important; font-size: 0.88rem !important; }
-#dataset_header, #recipe_header { min-width: 0 !important; }
 
-#left_panel { resize: horizontal; overflow-x: hidden; overflow-y: auto; width: clamp(320px, 24vw, 470px); min-width: 280px; max-width: 44vw; flex: none !important; border-right: 1px solid #374151; padding-right: 12px; transition: min-width 0.3s ease, width 0.3s ease, padding 0.3s ease, opacity 0.3s ease; }
-#left_panel.collapsed { width: 0px !important; min-width: 0px !important; padding: 0px !important; margin: 0px !important; border: none !important; opacity: 0; pointer-events: none; }
-#right_panel { width: clamp(300px, 22vw, 440px); min-width: 280px; max-width: 38vw; flex: none !important; border-left: 1px solid #374151; padding-left: 12px; overflow-y: auto; max-height: calc(100vh - 260px); transition: min-width 0.3s ease, width 0.3s ease, padding 0.3s ease, opacity 0.3s ease; }
-#right_panel.collapsed { width: 0px !important; min-width: 0px !important; padding: 0px !important; margin: 0px !important; border: none !important; opacity: 0; pointer-events: none; overflow: hidden !important; }
-/* Ligne d'en-tête du centre : aligner les deux toggles (gauche/droite) horizontalement */
-#panel_toggles_row { gap: 8px !important; }
-#panel_toggles_row > div { flex: 1 1 0 !important; min-width: 0 !important; }
-#main_gallery { min-height: 520px !important; }
-@media (max-width: 1050px) {
-    #top_workspace, #workbench_row { flex-wrap: wrap !important; }
-    #left_panel, #right_panel, #center_panel { width: 100% !important; max-width: none !important; min-width: 0 !important; }
+html, body, gradio-app {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 100% !important;
+    background:
+        linear-gradient(180deg, #090d12 0%, #0d131a 46%, #090d12 100%) !important;
+    color: var(--idr-text) !important;
 }
-.caption-label { font-size: 14px !important; font-weight: bold !important; color: #4ade80 !important; display: none !important; }
-.custom-selected { outline: 4px solid #ff8800 !important; outline-offset: -4px !important; box-shadow: inset 0 0 20px rgba(255, 136, 0, 0.9) !important; border-radius: 8px !important; }
-.custom-selected img { filter: sepia(0.8) hue-rotate(330deg) saturate(3) !important; opacity: 0.8 !important; }
+
+body,
+.gradio-container {
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+    letter-spacing: 0 !important;
+}
+
+.gradio-container, .contain, main, .wrap {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+}
+
+.gradio-container {
+    padding: 14px 18px 18px 18px !important;
+    min-height: 100vh !important;
+    background: transparent !important;
+}
+
+.gradio-container .main.fillable,
+.gradio-container > .main,
+.gradio-container > main {
+    max-width: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+.gradio-container * {
+    scrollbar-width: thin;
+    scrollbar-color: #3b4a5c #101720;
+}
+
+.gradio-container ::-webkit-scrollbar { width: 10px; height: 10px; }
+.gradio-container ::-webkit-scrollbar-track { background: #101720; }
+.gradio-container ::-webkit-scrollbar-thumb {
+    background: #3b4a5c;
+    border: 2px solid #101720;
+    border-radius: 8px;
+}
+
+#top_workspace {
+    gap: 14px !important;
+    align-items: stretch !important;
+    flex-wrap: nowrap !important;
+    margin-bottom: 14px !important;
+}
+
+#workbench_row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 14px !important;
+    align-items: flex-start !important;
+    min-height: calc(100vh - 24px) !important;
+}
+
+#workbench_row > div,
+#top_workspace > div {
+    min-width: 0 !important;
+}
+
+#center_panel {
+    min-width: 480px !important;
+    flex: 1 1 0 !important;
+    width: auto !important;
+}
+
+#dataset_header,
+#recipe_header,
+#left_panel,
+#right_panel,
+.panel-purple {
+    position: relative !important;
+    border-radius: var(--idr-radius) !important;
+    border: 1px solid var(--idr-border-soft) !important;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+        var(--idr-surface) !important;
+    box-shadow: var(--idr-shadow-soft) !important;
+    overflow: visible !important;
+}
+
+#dataset_header,
+#recipe_header {
+    padding: 12px !important;
+    max-height: min(410px, 58vh) !important;
+    flex-wrap: nowrap !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+}
+
+#dataset_header > *,
+#recipe_header > * {
+    flex-shrink: 0 !important;
+}
+
+#dataset_header::before,
+#recipe_header::before,
+#left_panel::before,
+#right_panel::before,
+.panel-purple::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--idr-teal), var(--idr-amber), var(--idr-blue));
+    opacity: 0.9;
+    pointer-events: none;
+}
+
+#recipe_header::before {
+    background: linear-gradient(90deg, var(--idr-amber), var(--idr-teal), var(--idr-green));
+}
+
+#left_panel::before {
+    background: linear-gradient(90deg, var(--idr-green), var(--idr-teal));
+}
+
+#right_panel::before {
+    background: linear-gradient(90deg, var(--idr-blue), var(--idr-teal));
+}
+
+#app_title h1 {
+    font-size: 1.34rem !important;
+    line-height: 1.08 !important;
+    margin: 0 0 4px 0 !important;
+    color: #f6f8fb !important;
+    font-weight: 780 !important;
+    letter-spacing: 0 !important;
+}
+
+#app_title p {
+    margin: 0 0 4px 0 !important;
+    color: var(--idr-muted) !important;
+    font-size: 0.92rem !important;
+}
+
+#dataset_title_row {
+    gap: 10px !important;
+    align-items: flex-start !important;
+    flex-wrap: nowrap !important;
+}
+
+#dataset_title_row > div {
+    min-width: 0 !important;
+}
+
+#dataset_settings_col {
+    flex: 0 0 150px !important;
+    position: relative !important;
+    z-index: 30 !important;
+}
+
+#dataset_settings_col > .block:has(> .label-wrap.open) {
+    position: absolute !important;
+    right: 0 !important;
+    top: 0 !important;
+    width: min(390px, calc(100vw - 44px)) !important;
+    max-height: min(72vh, 560px) !important;
+    overflow: auto !important;
+    padding: 14px !important;
+    border: 1px solid rgba(45, 212, 191, 0.42) !important;
+    border-radius: var(--idr-radius) !important;
+    background:
+        linear-gradient(180deg, rgba(28, 39, 55, 0.98), rgba(14, 21, 30, 0.98)),
+        var(--idr-surface) !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48) !important;
+}
+
+#dataset_settings_col > .block:has(> .label-wrap.open)::after {
+    content: "Cliquez sur Paramètres pour fermer";
+    display: block;
+    margin-top: 8px;
+    color: var(--idr-muted);
+    font-size: 0.72rem;
+}
+
+#left_panel {
+    position: sticky !important;
+    top: 0 !important;
+    resize: horizontal;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    flex-wrap: nowrap !important;
+    width: clamp(330px, 24vw, 500px);
+    min-width: 295px;
+    max-width: 44vw;
+    flex: none !important;
+    padding: 14px !important;
+    height: 100vh !important;
+    max-height: 100vh;
+    transition: min-width 0.25s ease, width 0.25s ease, padding 0.25s ease, opacity 0.25s ease !important;
+}
+
+#left_panel > * {
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+}
+
+#right_panel {
+    width: clamp(315px, 22vw, 460px);
+    min-width: 295px;
+    max-width: 38vw;
+    flex: none !important;
+    padding: 14px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    max-height: 100vh;
+    transition: min-width 0.25s ease, width 0.25s ease, padding 0.25s ease, opacity 0.25s ease !important;
+}
+
+#left_panel.collapsed,
+#right_panel.collapsed {
+    width: 0px !important;
+    min-width: 0px !important;
+    padding: 0px !important;
+    margin: 0px !important;
+    border: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+}
+
+#panel_toggles_row {
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+}
+
+#panel_toggles_row > div {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+}
+
+#center_panel > .tabs,
+#center_panel div:has(> .tab-nav) {
+    border-radius: var(--idr-radius) !important;
+    background: var(--idr-surface) !important;
+    border: 1px solid var(--idr-border-soft) !important;
+    box-shadow: var(--idr-shadow) !important;
+    overflow: visible !important;
+}
+
+.gradio-container button[role="tab"] {
+    background: transparent !important;
+    color: var(--idr-muted) !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    min-height: 42px !important;
+    font-weight: 680 !important;
+}
+
+.gradio-container button[role="tab"][aria-selected="true"],
+.gradio-container button[role="tab"].selected {
+    color: #f8fafc !important;
+    background: linear-gradient(180deg, rgba(45, 212, 191, 0.16), rgba(242, 184, 75, 0.06)) !important;
+    box-shadow: inset 0 -2px 0 var(--idr-teal) !important;
+}
+
+.gradio-container label,
+.gradio-container .label-wrap,
+.gradio-container .block-label {
+    color: var(--idr-muted) !important;
+    font-size: 0.82rem !important;
+    font-weight: 650 !important;
+}
+
+.gradio-container h1,
+.gradio-container h2,
+.gradio-container h3,
+.gradio-container strong {
+    color: var(--idr-text) !important;
+}
+
+.gradio-container p,
+.gradio-container li,
+.gradio-container markdown,
+.gradio-container .prose {
+    color: var(--idr-muted) !important;
+}
+
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select {
+    background: #0f151d !important;
+    color: var(--idr-text) !important;
+    border: 1px solid var(--idr-border) !important;
+    border-radius: var(--idr-radius) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+.gradio-container input::placeholder,
+.gradio-container textarea::placeholder {
+    color: var(--idr-muted-2) !important;
+}
+
+.gradio-container input:focus,
+.gradio-container textarea:focus,
+.gradio-container select:focus {
+    border-color: var(--idr-teal) !important;
+    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.16) !important;
+    outline: none !important;
+}
+
+.gradio-container button {
+    min-height: 34px !important;
+    border-radius: var(--idr-radius) !important;
+    border: 1px solid var(--idr-border) !important;
+    background: linear-gradient(180deg, #223041, #182231) !important;
+    color: var(--idr-text) !important;
+    font-weight: 720 !important;
+    letter-spacing: 0 !important;
+    padding: 0 12px !important;
+    font-size: 0.9rem !important;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22) !important;
+    transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease !important;
+}
+
+.gradio-container button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(45, 212, 191, 0.52) !important;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28) !important;
+}
+
+.gradio-container button:active {
+    transform: translateY(0);
+}
+
+.gradio-container button.primary {
+    background: linear-gradient(135deg, #2dd4bf 0%, #f2b84b 100%) !important;
+    color: #081017 !important;
+    border-color: rgba(242, 184, 75, 0.72) !important;
+}
+
+.gradio-container button.secondary {
+    background: linear-gradient(180deg, #1f2d3a, #151f2a) !important;
+    color: #dbeafe !important;
+}
+
+.gradio-container button.stop {
+    background: linear-gradient(180deg, rgba(248, 113, 113, 0.92), rgba(190, 64, 78, 0.92)) !important;
+    color: #fff7f7 !important;
+    border-color: rgba(248, 113, 113, 0.58) !important;
+}
+
+#dataset_load_btn,
+#save_single_btn,
+#btn_prep,
+#btn_run_ai,
+#btn_calc_adv,
+#ui_btn_exp {
+    box-shadow: 0 12px 28px rgba(45, 212, 191, 0.14) !important;
+}
+
+#dataset_quick_row {
+    gap: 12px !important;
+    align-items: stretch !important;
+    flex-wrap: nowrap !important;
+}
+
+#recipe_save_row,
+#recipe_ai_row,
+#gallery_sort_select_row,
+#selection_buttons_row,
+#csv_actions_row,
+#md_actions_row {
+    gap: 8px !important;
+    align-items: center !important;
+}
+
+#recipe_save_row,
+#recipe_ai_row,
+#gallery_sort_select_row,
+#selection_buttons_row,
+#csv_actions_row,
+#md_actions_row {
+    flex-wrap: nowrap !important;
+}
+
+#dataset_quick_row > div,
+#recipe_save_row > div,
+#recipe_ai_row > div,
+#gallery_sort_select_row > div,
+#selection_buttons_row > div,
+#csv_actions_row > div,
+#md_actions_row > div {
+    min-width: 0 !important;
+}
+
+#dataset_path_col {
+    flex: 1.15 1 0 !important;
+    gap: 8px !important;
+}
+
+#dataset_drop_col {
+    flex: 1 1 0 !important;
+    gap: 8px !important;
+    justify-content: flex-start !important;
+}
+
+#dataset_path_row {
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+}
+
+#dataset_path_row textarea,
+#dataset_path_row input {
+    min-height: 76px !important;
+    height: 76px !important;
+    max-height: 76px !important;
+    resize: none !important;
+    overflow: auto !important;
+    line-height: 1.25 !important;
+    padding: 10px 12px !important;
+}
+
+#dataset_path_row button {
+    flex: 0 0 104px !important;
+    width: 104px !important;
+    height: 76px !important;
+    min-width: 0 !important;
+    padding: 0 10px !important;
+    align-self: stretch !important;
+}
+
+#dataset_header .block,
+#recipe_header .block,
+#left_panel .block {
+    margin-top: 3px !important;
+    margin-bottom: 3px !important;
+}
+
+#dataset_header textarea,
+#dataset_header input,
+#recipe_header textarea,
+#recipe_header input,
+#left_panel textarea,
+#left_panel input {
+    min-height: 34px !important;
+}
+
+#dataset_header .block.padded,
+#recipe_header .block.padded {
+    padding: 6px 8px !important;
+}
+
+#dataset_header .form,
+#recipe_header .form {
+    gap: 6px !important;
+}
+
+#recipe_save_row .block.padded,
+#recipe_ai_row .block.padded {
+    min-height: 68px !important;
+}
+
+#recipe_save_row > .form,
+#recipe_ai_row > .form {
+    min-height: 72px !important;
+}
+
+#tracked_words_input textarea {
+    min-height: 42px !important;
+    max-height: 220px !important;
+    resize: vertical !important;
+    overflow: auto !important;
+}
+
+#dataset_drop_col .dataset-drop-zone {
+    min-height: 84px;
+    height: 84px;
+    margin-top: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 11.2px !important;
+    line-height: 1.22 !important;
+    padding: 12px 14px !important;
+}
+
+#dataset_status_text {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 2px 0 0 0 !important;
+}
+
+#dataset_status_text p {
+    margin: 0 !important;
+    font-size: 0.78rem !important;
+    line-height: 1.25 !important;
+}
+
+#dataset_load_btn {
+    width: 100% !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    margin-top: 0 !important;
+}
+
+#dataset_header #dataset_dir_input textarea {
+    font-size: 0.82rem !important;
+}
+
+#dataset_header .wrap:has(#dataset_dir_input),
+#dataset_header .wrap:has(#dataset_dir_input) > .block {
+    height: 76px !important;
+}
+
+#dataset_header .wrap:has(#dataset_load_btn),
+#dataset_header .wrap:has(#dataset_load_btn) > .block {
+    min-height: 34px !important;
+}
+
+#dataset_header .wrap:has(#dataset_status_text) {
+    margin-top: 0 !important;
+}
+
+#recipe_save_row > div:has(button),
+#recipe_ai_row > div:has(#ai_recipe_btn) {
+    flex: 0 1 220px !important;
+}
+
+#recipe_ai_row #ai_recipe_btn {
+    flex: 0 0 min(280px, 48%) !important;
+    width: min(280px, 48%) !important;
+    min-width: 0 !important;
+}
+
+#recipe_save_row button,
+#recipe_ai_row button {
+    max-width: 260px !important;
+    width: 100% !important;
+}
+
+#analyze_recipe_btn {
+    max-width: 260px !important;
+    width: 100% !important;
+    align-self: auto !important;
+}
+
+#recipe_save_row button,
+#recipe_ai_row button,
+#ai_recipe_btn {
+    height: 34px !important;
+    min-height: 34px !important;
+}
+
+#ai_recipe_btn,
+#analyze_recipe_btn {
+    min-height: 34px !important;
+}
+
+#gallery_search_box {
+    position: relative !important;
+    min-height: 43px !important;
+    height: 43px !important;
+    padding: 6px 8px !important;
+    margin-bottom: 5px !important;
+    overflow: hidden !important;
+}
+
+#gallery_search_box .wrap,
+#gallery_search_box .block,
+#gallery_search_box .form,
+#gallery_sort_radio .wrap,
+#multi_cb .wrap {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+#gallery_search_box label,
+#gallery_sort_radio label,
+#multi_cb label {
+    font-size: 0.77rem !important;
+    line-height: 1.1 !important;
+}
+
+#gallery_search_box label.container {
+    display: block !important;
+    min-height: 31px !important;
+    height: 31px !important;
+}
+
+#gallery_search_box span[data-testid="block-info"] {
+    display: none !important;
+}
+
+#gallery_search_box::before {
+    content: "🔍";
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    z-index: 3;
+    transform: translateY(-50%);
+    opacity: 0.82;
+    pointer-events: none;
+    font-size: 0.82rem;
+}
+
+#gallery_search_box .input-container {
+    margin: 0 !important;
+}
+
+#gallery_search_box textarea {
+    min-height: 31px !important;
+    height: 31px !important;
+    padding: 6px 10px 6px 31px !important;
+}
+
+#gallery_sort_select_row {
+    align-items: center !important;
+    gap: 4px !important;
+    margin: 4px 0 6px !important;
+    padding: 6px !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    border-radius: var(--idr-radius) !important;
+    background: rgba(8, 13, 20, 0.36) !important;
+}
+
+#gallery_sort_select_row .block,
+#gallery_sort_select_row .form {
+    margin: 0 !important;
+    min-width: 0 !important;
+}
+
+#gallery_sort_select_row > .form {
+    display: grid !important;
+    grid-template-columns: minmax(66px, 0.72fr) minmax(96px, 1fr) !important;
+    gap: 4px !important;
+    align-items: center !important;
+    flex: 1 1 168px !important;
+    width: auto !important;
+}
+
+#gallery_sort_select_row > .form > * {
+    min-width: 0 !important;
+}
+
+#gallery_sort_select_row > button {
+    flex: 0 1 52px !important;
+}
+
+#gallery_sort_radio,
+#multi_cb {
+    min-height: 30px !important;
+    height: 30px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    overflow: hidden !important;
+}
+
+#gallery_sort_radio > span[data-testid="block-info"] {
+    display: none !important;
+}
+
+#gallery_sort_radio .wrap,
+#gallery_sort_radio [role="radiogroup"] {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 4px !important;
+    align-items: center !important;
+    height: 30px !important;
+    min-height: 30px !important;
+}
+
+#gallery_sort_radio .wrap label,
+#gallery_sort_radio [role="radiogroup"] label {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+}
+
+#gallery_sort_radio input[type="radio"] {
+    display: none !important;
+}
+
+#gallery_sort_radio .wrap label,
+#multi_cb label {
+    min-height: 28px !important;
+    height: 28px !important;
+    align-items: center !important;
+}
+
+#gallery_sort_radio .wrap label {
+    justify-content: center !important;
+    padding: 0 5px !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    border-radius: 6px !important;
+    background: rgba(18, 28, 40, 0.72) !important;
+    color: #b9c8da !important;
+}
+
+#gallery_sort_radio .wrap label.selected {
+    border-color: rgba(45, 212, 191, 0.45) !important;
+    background: rgba(45, 212, 191, 0.14) !important;
+    color: #eff6ff !important;
+}
+
+#multi_cb label {
+    display: flex !important;
+    white-space: nowrap !important;
+}
+
+#select_all_btn,
+#clear_sel_btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 29px !important;
+    height: 29px !important;
+    padding: 0 6px !important;
+    font-size: 0.72rem !important;
+    white-space: nowrap !important;
+}
+
+#ui_selection_status {
+    margin-top: 0 !important;
+}
+
+.selection-status-pill {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    min-height: 25px;
+    padding: 4px 9px;
+    border-left: 3px solid #22c55e;
+    border-radius: 6px;
+    background: rgba(34, 197, 94, 0.095);
+    color: #d7fbe7;
+    font-size: 0.79rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+#gallery_csv_acc {
+    margin-top: 8px !important;
+    max-height: 280px !important;
+    overflow: auto !important;
+}
+
+#caption_import_dropzone {
+    display: none !important;
+}
+
+#gallery_csv_acc.csv-import-open #caption_import_dropzone {
+    display: block !important;
+}
+
+#caption_import_dropzone label,
+#caption_import_dropzone [data-testid="block-info"] {
+    font-size: 0.8rem !important;
+}
+
+#gallery_csv_acc > div:last-child,
+#gallery_csv_acc > div:not(.wrap):not(.label-wrap) {
+    padding: 8px !important;
+    max-height: 210px !important;
+    overflow: auto !important;
+}
+
+#gallery_csv_acc .block {
+    margin-top: 3px !important;
+    margin-bottom: 3px !important;
+}
+
+#gallery_csv_acc .prose p,
+#gallery_csv_acc .md p {
+    margin: 0 !important;
+    font-size: 0.78rem !important;
+    line-height: 1.35 !important;
+    color: var(--idr-muted) !important;
+}
+
+#gallery_csv_acc input {
+    min-height: 34px !important;
+}
+
+#main_gallery {
+    min-height: 520px !important;
+    background: #0f151d !important;
+    border: 1px solid var(--idr-border) !important;
+    border-radius: var(--idr-radius) !important;
+    padding: 0 !important;
+}
+
+#main_gallery button {
+    border-radius: 7px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    background: #0b1118 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    aspect-ratio: 1 / 1 !important;
+}
+
+#main_gallery img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+}
+
+#main_gallery .grid-wrap,
+#main_gallery .grid-container,
+#main_gallery [class*="grid"] {
+    gap: 6px !important;
+    padding: 6px !important;
+}
+
+#main_gallery button:hover {
+    border-color: rgba(45, 212, 191, 0.55) !important;
+    transform: translateY(-1px);
+}
+
+.custom-selected {
+    outline: 3px solid var(--idr-amber) !important;
+    outline-offset: -3px !important;
+    box-shadow: inset 0 0 0 2px rgba(8, 16, 23, 0.9), 0 0 0 2px rgba(242, 184, 75, 0.34) !important;
+    border-radius: 8px !important;
+}
+
+.custom-selected img {
+    filter: saturate(1.16) contrast(1.04) brightness(0.95) !important;
+    opacity: 0.96 !important;
+}
+
+#viewer_area,
+#viewer_caption_area,
+#live_translation_preview {
+    border-radius: var(--idr-radius) !important;
+}
+
+#viewer_area {
+    min-height: 300px !important;
+}
+
+#viewer_area img,
+#viewer_area canvas {
+    border-radius: var(--idr-radius) !important;
+}
+
+#viewer_area_text {
+    gap: 8px !important;
+}
+
+#viewer_area_text .html-container,
+#viewer_area_text .html-container *,
+#viewer_area_text .prose,
+#viewer_area_text .prose *,
+#viewer_area_text .md,
+#viewer_area_text .md * {
+    font-size: 0.82rem !important;
+    line-height: 1.34 !important;
+}
+
+#viewer_area_text .html-container {
+    padding: 10px 12px !important;
+}
+
+#viewer_area_text [style*="green"] {
+    font-size: 0.82rem !important;
+    margin: 4px 0 !important;
+}
+
+#viewer_shortcuts_acc {
+    margin: 2px 0 !important;
+    max-height: 180px !important;
+    overflow: auto !important;
+}
+
+#viewer_shortcuts_acc > button {
+    min-height: 30px !important;
+    padding: 0 10px !important;
+    font-size: 0.82rem !important;
+}
+
+#viewer_shortcuts_acc .prose,
+#viewer_shortcuts_acc .md {
+    font-size: 0.78rem !important;
+    line-height: 1.35 !important;
+}
+
+#viewer_caption_area textarea {
+    min-height: 110px !important;
+    font-size: 0.86rem !important;
+    line-height: 1.38 !important;
+}
+
+.caption-label {
+    font-size: 14px !important;
+    font-weight: bold !important;
+    color: var(--idr-green) !important;
+    display: none !important;
+}
 
 #hidden_sync_input, #hidden_sync_btn, #hidden_calc_btn, #hidden_dnd_input, #hidden_dnd_btn, #hidden_tags_input,
-#hidden_dataset_path_input, #hidden_dataset_path_btn { display: none !important; }
+#hidden_live_translation_btn, #hidden_reverse_translation_btn,
+#hidden_dataset_path_input, #hidden_dataset_path_btn, #hidden_manual_crop_payload, #hidden_manual_crop_btn { display: none !important; }
+#hidden_delete_current_btn { display: none !important; }
 #hidden_lib_toggle_input, #hidden_lib_toggle_btn, #hidden_lib_delete_input, #hidden_lib_delete_btn { display: none !important; }
-.form:has(#hidden_sync_input), .form:has(#hidden_dnd_input), .form:has(#hidden_tags_input),
-.form:has(#hidden_dataset_path_input), .form:has(#hidden_lib_toggle_input), .form:has(#hidden_lib_delete_input) {
+#hidden_copy_next_btn { display: none !important; }
+.form:has(#hidden_sync_input), .form:has(#hidden_dnd_input), .form:has(#hidden_tags_input), .form:has(#hidden_live_translation_btn), .form:has(#hidden_reverse_translation_btn),
+.form:has(#hidden_dataset_path_input), .form:has(#hidden_delete_current_btn), .form:has(#hidden_lib_toggle_input), .form:has(#hidden_lib_delete_input), .form:has(#hidden_copy_next_btn), .form:has(#hidden_manual_crop_payload) {
     display: none !important;
     height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
 }
 
-.gradio-dataframe tbody tr { transition: background-color 0.2s, opacity 0.2s; }
+.gradio-container .block,
+.gradio-container .form,
+.gradio-container .panel,
+.gradio-container .compact {
+    background: transparent !important;
+    border-color: var(--idr-border-soft) !important;
+}
+
+.gradio-container .accordion,
+.gradio-container details {
+    background: rgba(23, 33, 43, 0.68) !important;
+    border: 1px solid var(--idr-border-soft) !important;
+    border-radius: var(--idr-radius) !important;
+}
+
+.gradio-container .accordion > button,
+.gradio-container details > summary {
+    color: var(--idr-text) !important;
+    border-radius: var(--idr-radius) !important;
+}
+
+.gradio-dataframe {
+    border-radius: var(--idr-radius) !important;
+    overflow: hidden !important;
+    border: 1px solid var(--idr-border) !important;
+}
+
+.gradio-dataframe table,
+.gradio-dataframe thead,
+.gradio-dataframe tbody {
+    background: #0f151d !important;
+    color: var(--idr-text) !important;
+}
+
+.gradio-dataframe th {
+    background: #1a2430 !important;
+    color: #dbeafe !important;
+    font-weight: 740 !important;
+    border-color: var(--idr-border) !important;
+}
+
+.gradio-dataframe td {
+    border-color: rgba(148, 163, 184, 0.14) !important;
+}
+
+.gradio-dataframe tbody tr {
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+.gradio-dataframe tbody tr:hover {
+    background-color: rgba(45, 212, 191, 0.08) !important;
+}
+
 .gradio-dataframe tbody tr[draggable="true"] { cursor: grab !important; }
-.gradio-dataframe tbody tr.dragging { opacity: 0.4; background-color: rgba(255, 136, 0, 0.3) !important; outline: 2px dashed #ff8800; outline-offset: -2px;}
-#autocomplete-list { position: absolute; border: 1px solid #555; background-color: #1f2937; z-index: 9999; max-height: 150px; overflow-y: auto; border-radius: 4px; box-shadow: 0px 4px 6px rgba(0,0,0,0.5); }
-#autocomplete-list div { padding: 8px; cursor: pointer; color: #fff; font-size: 14px; }
-#autocomplete-list div:hover, #autocomplete-list div.autocomplete-active { background-color: #4ade80; color: #000; }
-.info-box { background-color: rgba(74, 222, 128, 0.1); border-left: 4px solid #4ade80; padding: 10px; margin-bottom: 15px; border-radius: 4px; }
-
-#btn_translate_entire { background: #4ade80 !important; color: #052e16 !important; font-weight: bold !important; border: none !important; transition: all 0.2s; }
-#btn_translate_entire:hover { background: #22c55e !important; transform: scale(1.01); }
-
-/* Rendu 100% Natif Gradio (Fond Vert par CSS) pour Traduction Live */
-#live_translation_preview textarea { 
-    background-color: rgba(34, 197, 94, 0.08) !important; 
-    color: #4ade80 !important; 
-    border: 1px dashed #4ade80 !important; 
-    font-style: italic !important;
-    opacity: 1 !important; 
-    -webkit-text-fill-color: #4ade80 !important;
+.gradio-dataframe tbody tr.dragging {
+    opacity: 0.45;
+    background-color: rgba(242, 184, 75, 0.22) !important;
+    outline: 2px dashed var(--idr-amber);
+    outline-offset: -2px;
 }
 
-.lib-item-custom { transition: border-color 0.2s ease, background-color 0.2s ease; }
-.dataset-drop-zone { border: 1px dashed #64748b; border-radius: 6px; padding: 8px 10px; margin: 6px 0 8px 0; background: rgba(74, 222, 128, 0.06); color: #cbd5e1; font-size: 12.5px; line-height: 1.3; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
-.dataset-drop-zone strong { display: block; color: #4ade80; margin-bottom: 2px; }
-.dataset-drop-zone.dragover { border-color: #4ade80; background: rgba(74, 222, 128, 0.16); color: #fff; }
+.gradio-container .plot-container,
+.gradio-container .js-plotly-plot {
+    border-radius: var(--idr-radius) !important;
+}
 
-/* ======================================================
-   🎨 PANELS THÉMATIQUES (v4.3.2)
-   Encarts colorés semi-transparents pour regrouper visuellement
-   les zones fonctionnelles. Volontairement légers : on ne touche
-   ni au layout flex (top_workspace / workbench_row), ni aux
-   composants enfants ; on n'ajoute qu'un fond, une bordure et un
-   liseré gauche.
-   ====================================================== */
+#autocomplete-list {
+    position: absolute;
+    border: 1px solid var(--idr-border);
+    background-color: #111923;
+    z-index: 9999;
+    max-height: 180px;
+    overflow-y: auto;
+    border-radius: var(--idr-radius);
+    box-shadow: var(--idr-shadow);
+}
 
-/* Tronc commun : tous les panels partagent le même paddding, le même radius et la même transition douce. */
-#top_workspace > #dataset_header,
-#top_workspace > #recipe_header,
-#workbench_row > #left_panel,
-#workbench_row > #right_panel,
-.panel-purple {
-    border-radius: 10px !important;
+#autocomplete-list div {
+    padding: 9px 10px;
+    cursor: pointer;
+    color: var(--idr-text);
+    font-size: 14px;
+}
+
+#autocomplete-list div:hover,
+#autocomplete-list div.autocomplete-active {
+    background-color: rgba(45, 212, 191, 0.18);
+    color: #f8fafc;
+}
+
+.info-box,
+.ai-desc-box {
+    background: rgba(45, 212, 191, 0.08) !important;
+    border: 1px solid rgba(45, 212, 191, 0.22) !important;
+    border-left: 3px solid var(--idr-teal) !important;
     padding: 10px 12px !important;
-    transition: background-color 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease !important;
-    position: relative !important;
+    margin-bottom: 12px !important;
+    border-radius: var(--idr-radius) !important;
+    color: #d9fff8 !important;
 }
 
-/* 🟡 Jaune — Chargement du dataset */
-#top_workspace > #dataset_header {
-    background: rgba(234, 179, 8, 0.08) !important;
-    border: 1px solid rgba(234, 179, 8, 0.35) !important;
-    border-left: 4px solid #eab308 !important;
-}
-#top_workspace > #dataset_header:hover {
-    background: rgba(234, 179, 8, 0.12) !important;
-    box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.25) inset !important;
-}
-
-/* 🔵 Bleu foncé — Recette globale */
-#top_workspace > #recipe_header {
-    background: rgba(59, 130, 246, 0.07) !important;
-    border: 1px solid rgba(59, 130, 246, 0.30) !important;
-    border-left: 4px solid #3b82f6 !important;
-}
-#top_workspace > #recipe_header:hover {
-    background: rgba(59, 130, 246, 0.11) !important;
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25) inset !important;
+.lib-title-panel {
+    padding: 10px 12px;
+    border-radius: var(--idr-radius);
+    border: 1px solid rgba(45, 212, 191, 0.34);
+    background:
+        linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(96, 165, 250, 0.11)),
+        rgba(16, 24, 34, 0.92);
+    color: #e8fbff;
+    font-weight: 780;
+    text-align: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-/* 🟢 Vert — Galerie & Sélection */
-#workbench_row > #left_panel {
-    background: rgba(34, 197, 94, 0.06) !important;
-    /* on conserve la border-right gérée plus haut comme guide visuel */
-    border: 1px solid rgba(34, 197, 94, 0.28) !important;
-    border-right: 1px solid #374151 !important;
-    border-left: 4px solid #22c55e !important;
+#prep_workspace {
+    gap: 12px !important;
+    align-items: flex-start !important;
 }
-#workbench_row > #left_panel.collapsed {
-    background: transparent !important;
+
+#prep_workspace > div {
+    min-width: 0 !important;
+}
+
+#prep_duplicate_panel,
+#prep_transform_panel {
+    gap: 8px !important;
+}
+
+#prep_preset_row {
+    gap: 8px !important;
+    align-items: flex-end !important;
+    flex-wrap: nowrap !important;
+}
+
+#prep_preset_row > div {
+    min-width: 0 !important;
+}
+
+.prep-summary-box {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+    padding: 10px 12px;
+    border-radius: var(--idr-radius);
+    border: 1px solid rgba(45, 212, 191, 0.28);
+    background: rgba(45, 212, 191, 0.07);
+    color: var(--idr-text);
+    font-size: 0.82rem;
+    line-height: 1.3;
+}
+
+.prep-summary-box strong {
+    grid-column: 1 / -1;
+    color: #bffcf3 !important;
+}
+
+.prep-summary-path {
+    grid-column: 1 / -1;
+    color: var(--idr-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#dup_recommendation {
+    margin: 4px 0 !important;
+    padding: 8px 10px !important;
+    border-radius: var(--idr-radius) !important;
+    border: 1px solid rgba(242, 184, 75, 0.25) !important;
+    background: rgba(242, 184, 75, 0.065) !important;
+}
+
+#dup_recommendation p {
+    margin: 0 !important;
+    font-size: 0.8rem !important;
+    line-height: 1.35 !important;
+}
+
+#prep_duplicate_panel .block.padded,
+#prep_transform_panel .block.padded,
+#prep_low_res_panel {
+    padding: 9px 10px !important;
+    margin: 4px 0 !important;
+}
+
+#prep_duplicate_panel textarea,
+#prep_transform_panel textarea,
+#ai_action_manager textarea {
+    font-size: 0.84rem !important;
+    line-height: 1.35 !important;
+}
+
+#prep_duplicate_panel img,
+#manual_crop_editor img,
+#manual_crop_editor canvas {
+    object-fit: contain !important;
+    border-radius: var(--idr-radius) !important;
+}
+
+#manual_crop_acc {
+    margin-top: 8px !important;
+}
+
+#manual_crop_canvas_tool {
+    border: 1px solid rgba(45, 212, 191, 0.26);
+    border-radius: var(--idr-radius);
+    background: rgba(8, 13, 19, 0.86);
+    padding: 10px;
+    margin-bottom: 8px;
+}
+
+.manual-crop-toolbar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.manual-crop-toolbar button {
+    min-height: 30px !important;
+    padding: 0 9px !important;
+    font-size: 0.78rem !important;
+}
+
+.manual-crop-toolbar button.active {
+    border-color: rgba(45, 212, 191, 0.85) !important;
+    background: linear-gradient(135deg, rgba(45, 212, 191, 0.28), rgba(96, 165, 250, 0.20)) !important;
+    color: #f8fafc !important;
+}
+
+#manual_crop_canvas_wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    min-height: 300px;
+    max-height: 520px;
+    border-radius: var(--idr-radius);
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background:
+        linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255,255,255,0.03) 25%, transparent 25%),
+        #070b10;
+    background-size: 24px 24px;
+}
+
+#manual_crop_canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    touch-action: none;
+}
+
+#manual_crop_canvas.dragging {
+    cursor: grabbing;
+}
+
+.manual-crop-help {
+    margin-top: 7px;
+    color: var(--idr-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.manual-crop-status {
+    color: #bffcf3;
+    font-size: 0.76rem;
+    margin-left: auto;
+}
+
+#manual_crop_editor {
+    height: 1px !important;
+    min-height: 1px !important;
+    max-height: 1px !important;
+    opacity: 0.01 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+}
+
+#manual_crop_acc > button,
+#ai_action_manager > button {
+    min-height: 32px !important;
+    font-size: 0.84rem !important;
+}
+
+#manual_crop_acc .prose p,
+#manual_crop_acc .md p {
+    margin: 0 0 6px 0 !important;
+    font-size: 0.78rem !important;
+    line-height: 1.35 !important;
+}
+
+#manual_crop_nav,
+#manual_crop_actions,
+#ai_action_manager_buttons,
+#ai_action_json_buttons {
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+}
+
+#manual_crop_nav > div,
+#manual_crop_actions > div,
+#ai_action_manager_buttons > div,
+#ai_action_json_buttons > div {
+    min-width: 0 !important;
+}
+
+#manual_crop_nav button,
+#manual_crop_actions button,
+#ai_action_manager_buttons button,
+#ai_action_json_buttons button {
+    width: 100% !important;
+    min-height: 32px !important;
+    font-size: 0.82rem !important;
+}
+
+#ai_action_manager {
+    margin: 8px 0 10px 0 !important;
+    border-color: rgba(96, 165, 250, 0.26) !important;
+    background: rgba(96, 165, 250, 0.055) !important;
+}
+
+#ai_action_manager .block {
+    margin-top: 4px !important;
+    margin-bottom: 4px !important;
+}
+
+#ai_action_manager input,
+#ai_action_manager textarea {
+    min-height: 34px !important;
+}
+
+#btn_translate_entire {
+    background: linear-gradient(135deg, var(--idr-green), var(--idr-teal)) !important;
+    color: #06120f !important;
+    font-weight: 760 !important;
     border: none !important;
 }
 
-/* 🟦 Cyan — Bibliothèque de mots (panneau droit) */
-#workbench_row > #right_panel {
-    background: rgba(20, 184, 166, 0.06) !important;
-    border: 1px solid rgba(20, 184, 166, 0.30) !important;
-    border-left: 4px solid #14b8a6 !important;
-    /* on n'écrase pas le padding-left existant */
-    padding-left: 12px !important;
-}
-#workbench_row > #right_panel.collapsed {
-    background: transparent !important;
-    border: none !important;
+#btn_translate_entire:hover {
+    box-shadow: 0 12px 24px rgba(45, 212, 191, 0.18) !important;
 }
 
-/* 🟣 Violet — Bloc "Serveur et Modèles Locaux" dans l'onglet IA.
-   Appliqué via elem_classes="panel-purple" sur le Group Gradio. */
+#live_translation_preview textarea {
+    background-color: rgba(45, 212, 191, 0.07) !important;
+    color: #9ff7e9 !important;
+    border: 1px dashed rgba(45, 212, 191, 0.55) !important;
+    font-style: italic !important;
+    opacity: 1 !important;
+    -webkit-text-fill-color: #9ff7e9 !important;
+}
+
+.dataset-drop-zone {
+    border: 1px dashed rgba(148, 163, 184, 0.38);
+    border-radius: var(--idr-radius);
+    padding: 11px 12px;
+    margin: 8px 0 10px 0;
+    background: rgba(45, 212, 191, 0.055);
+    color: var(--idr-muted);
+    font-size: 12.5px;
+    line-height: 1.35;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.dataset-drop-zone strong {
+    display: block;
+    color: #bffcf3;
+    margin-bottom: 3px;
+    font-weight: 760;
+}
+
+.dataset-drop-zone.dragover {
+    border-color: var(--idr-teal);
+    background: rgba(45, 212, 191, 0.14);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.lib-item-custom {
+    transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease !important;
+    border-radius: var(--idr-radius) !important;
+    margin-bottom: 7px !important;
+}
+
+.lib-item-custom:hover {
+    transform: translateY(-1px);
+    border-color: rgba(45, 212, 191, 0.62) !important;
+}
+
+.lib-item-delete {
+    color: #fecdd3 !important;
+    background-color: rgba(248, 113, 113, 0.13) !important;
+}
+
 .panel-purple {
-    background: rgba(168, 85, 247, 0.07) !important;
-    border: 1px solid rgba(168, 85, 247, 0.30) !important;
-    border-left: 4px solid #a855f7 !important;
-    margin-bottom: 8px !important;
-}
-.panel-purple:hover {
-    background: rgba(168, 85, 247, 0.10) !important;
+    padding: 14px !important;
+    margin-bottom: 10px !important;
 }
 
-/* Accordion "Assistant de Traduction" — léger habillage rouge
-   pour rappeler la zone rouge de la maquette image2 (volet pliable). */
+.panel-purple::before {
+    background: linear-gradient(90deg, var(--idr-blue), var(--idr-teal), var(--idr-amber));
+}
+
+.panel-translate {
+    border: 1px solid rgba(251, 113, 133, 0.22) !important;
+    border-radius: var(--idr-radius) !important;
+    background: rgba(251, 113, 133, 0.045) !important;
+}
+
 .panel-translate > .label-wrap,
 .panel-translate > button {
-    background: rgba(239, 68, 68, 0.10) !important;
-    border-left: 3px solid #ef4444 !important;
-    border-radius: 6px !important;
-}
-.panel-translate {
-    border: 1px solid rgba(239, 68, 68, 0.25) !important;
-    border-radius: 8px !important;
+    background: rgba(251, 113, 133, 0.075) !important;
+    border-left: 3px solid var(--idr-coral) !important;
+    border-radius: var(--idr-radius) !important;
 }
 
-/* Sur écrans étroits (mobile / responsive), les liserés gauches restent
-   visibles mais on assouplit le padding pour éviter les débordements. */
+#dataset_status_text,
+#ui_selection_status,
+#ui_single_save_status,
+#prep_status,
+#ai_status,
+#ui_export_status,
+#ui_stats_status {
+    color: var(--idr-muted) !important;
+}
+
 @media (max-width: 1050px) {
-    #top_workspace > #dataset_header,
-    #top_workspace > #recipe_header,
-    #workbench_row > #left_panel,
-    #workbench_row > #right_panel,
-    .panel-purple {
-        padding: 8px 10px !important;
+    .gradio-container { padding: 10px !important; }
+    #top_workspace, #workbench_row { flex-wrap: wrap !important; }
+    #dataset_header,
+    #recipe_header {
+        width: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        flex: 1 1 100% !important;
+        overflow: visible !important;
     }
+    #dataset_header > *,
+    #recipe_header > * {
+        flex-shrink: 1 !important;
+    }
+    #dataset_quick_row,
+    #dataset_title_row,
+    #recipe_save_row,
+    #recipe_ai_row {
+        flex-wrap: wrap !important;
+        align-items: stretch !important;
+    }
+    #selection_buttons_row,
+    #gallery_sort_select_row,
+    #csv_actions_row,
+    #md_actions_row {
+        flex-wrap: wrap !important;
+    }
+    #selection_buttons_row > div,
+    #gallery_sort_select_row > div,
+    #csv_actions_row > div,
+    #md_actions_row > div {
+        flex: 1 1 calc(50% - 4px) !important;
+        min-width: 0 !important;
+    }
+    #selection_tools_group > .form {
+        grid-template-columns: 1fr !important;
+    }
+    #dataset_settings_col {
+        flex: 1 1 100% !important;
+    }
+    #dataset_path_col,
+    #dataset_drop_col,
+    #recipe_save_row > .form,
+    #recipe_ai_row > .form {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    #recipe_save_row button,
+    #recipe_ai_row button,
+    #ai_recipe_btn,
+    #analyze_recipe_btn {
+        flex: 1 1 calc(50% - 4px) !important;
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+    #left_panel, #right_panel, #center_panel {
+        position: relative !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        height: auto !important;
+        max-height: none !important;
+    }
+    #dataset_header,
+    #recipe_header,
+    #left_panel,
+    #right_panel,
+    .panel-purple {
+        padding: 10px !important;
+    }
+    #app_title h1 { font-size: 1.32rem !important; }
+    .gradio-container button { min-height: 36px !important; }
 }
 """
 
@@ -532,6 +1827,7 @@ function() {
     };
 
     function updateGalleryVisuals() { document.querySelectorAll('#main_gallery button').forEach((btn, idx) => { btn.classList.toggle('custom-selected', window.gallerySelectedIndices.has(idx)); }); }
+    window.updateGalleryVisuals = updateGalleryVisuals;
     function syncWithPython(viewIndex) {
         const payload = { selected: Array.from(window.gallerySelectedIndices), viewIndex: viewIndex };
         const wrapper = document.getElementById('hidden_sync_input');
@@ -541,6 +1837,18 @@ function() {
             setTimeout(() => { const btn = document.getElementById('hidden_sync_btn'); if (btn) btn.click(); }, 30);
         }
     }
+    window.syncWithPython = syncWithPython;
+    window.selectAllGallery = function() {
+        const btns = document.querySelectorAll('#main_gallery button');
+        window.gallerySelectedIndices = new Set();
+        btns.forEach((b, i) => window.gallerySelectedIndices.add(i));
+        updateGalleryVisuals();
+        if (btns.length > 0) syncWithPython(window.lastClickedIndex !== -1 ? window.lastClickedIndex : 0);
+    };
+    window.clearGallerySelection = function() {
+        window.gallerySelectedIndices = new Set();
+        updateGalleryVisuals();
+    };
 
     function setupAutocomplete() {
         const captionWrappers = document.querySelectorAll('#viewer_caption_area textarea');
@@ -581,6 +1889,42 @@ function() {
         document.addEventListener("click", function (e) { closeAllLists(e.target); });
     }
 
+    function setupLiveTranslationBridge() {
+        const wrapper = document.getElementById('viewer_caption_area');
+        const inp = wrapper ? wrapper.querySelector('textarea') : null;
+        if (!inp || inp.dataset.liveTranslationBridge) return;
+        inp.dataset.liveTranslationBridge = "true";
+        let timer = null;
+        inp.addEventListener("input", function() {
+            if (window.__idrReverseTranslationUpdating) return;
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                window.__idrLiveTranslationUpdating = true;
+                const btn = document.getElementById('hidden_live_translation_btn');
+                if (btn) btn.click();
+                setTimeout(() => { window.__idrLiveTranslationUpdating = false; }, 900);
+            }, 140);
+        });
+    }
+
+    function setupReverseTranslationBridge() {
+        const wrapper = document.getElementById('live_translation_preview');
+        const inp = wrapper ? wrapper.querySelector('textarea') : null;
+        if (!inp || inp.dataset.reverseTranslationBridge) return;
+        inp.dataset.reverseTranslationBridge = "true";
+        let timer = null;
+        inp.addEventListener("input", function() {
+            if (window.__idrLiveTranslationUpdating) return;
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                window.__idrReverseTranslationUpdating = true;
+                const btn = document.getElementById('hidden_reverse_translation_btn');
+                if (btn) btn.click();
+                setTimeout(() => { window.__idrReverseTranslationUpdating = false; }, 900);
+            }, 180);
+        });
+    }
+
     function installStaticTooltips() {
         const tooltips = {
             "ai_recipe_btn": "Analyse les captions actuelles des images chargees pour proposer une recette globale de mots-cles partages. / Uses the currently loaded image captions to suggest a shared global keyword recipe."
@@ -596,11 +1940,453 @@ function() {
         });
     }
 
+    function installLanguageAutodetect() {
+        const langKey = "idr_language_initialized";
+        const radios = Array.from(document.querySelectorAll('#language_selector input[type="radio"]'));
+        if (!radios.length) return;
+        radios.forEach(radio => {
+            if (!radio.dataset.langPersistReady) {
+                radio.dataset.langPersistReady = "true";
+                radio.addEventListener("change", () => {
+                    if (radio.checked) localStorage.setItem(langKey, "manual");
+                });
+            }
+        });
+        if (localStorage.getItem(langKey)) return;
+        const browserLang = (navigator.language || (navigator.languages && navigator.languages[0]) || "en").toLowerCase();
+        const desired = browserLang.startsWith("fr") ? "FR" : "EN";
+        const target = radios.find(r => (r.value || "").toUpperCase() === desired);
+        if (target && !target.checked) {
+            target.click();
+        }
+        localStorage.setItem(langKey, "auto");
+    }
+
+    window.__idrManualCropState = window.__idrManualCropState || {
+        img: null,
+        ratio: "1:1",
+        frame: null,
+        scale: 1,
+        panX: 0,
+        panY: 0,
+        dragging: false,
+        dragMode: "pan",
+        lastX: 0,
+        lastY: 0,
+        activeHandle: null
+    };
+
+    function manualCropEls() {
+        return {
+            tool: document.getElementById('manual_crop_canvas_tool'),
+            canvas: document.getElementById('manual_crop_canvas'),
+            status: document.getElementById('manual_crop_canvas_status'),
+            payloadWrap: document.getElementById('hidden_manual_crop_payload'),
+            payloadInput: document.querySelector('#hidden_manual_crop_payload textarea, #hidden_manual_crop_payload input'),
+            payloadBtn: document.getElementById('hidden_manual_crop_btn')
+        };
+    }
+
+    function manualCropSetStatus(text, warn=false) {
+        const { status } = manualCropEls();
+        if (!status) return;
+        status.textContent = text;
+        status.style.color = warn ? '#fbbf24' : '#bffcf3';
+    }
+
+    function manualCropCanvasSize(canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(420, Math.round(rect.width * dpr));
+        const height = Math.max(280, Math.round(rect.height * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+        return { width, height, dpr };
+    }
+
+    function manualCropRatioValue(ratio) {
+        if (!ratio || ratio === "free") return null;
+        const parts = ratio.split(':').map(Number);
+        if (parts.length !== 2 || !parts[0] || !parts[1]) return 1;
+        return parts[0] / parts[1];
+    }
+
+    function manualCropStatusText(prefix="") {
+        const st = window.__idrManualCropState;
+        const ratio = st.ratio && st.ratio !== "free" ? st.ratio : (st.ratio === "free" ? "Free" : "");
+        const size = st.img ? `${st.img.naturalWidth}x${st.img.naturalHeight}` : "";
+        return [prefix, size, ratio ? `ratio ${ratio}` : ""].filter(Boolean).join(" · ");
+    }
+
+    function manualCropSyncRatioButtons() {
+        const { tool } = manualCropEls();
+        if (!tool) return;
+        const st = window.__idrManualCropState;
+        tool.querySelectorAll('.manual-ratio-btn').forEach(btn => {
+            btn.classList.toggle('active', (btn.dataset.ratio || "") === st.ratio);
+        });
+    }
+
+    function manualCropApplyRatio(ratio) {
+        const st = window.__idrManualCropState;
+        st.ratio = ratio || "1:1";
+        st.frame = null;
+        manualCropSyncRatioButtons();
+        if (st.img) manualCropResetImage();
+        else manualCropDraw();
+        manualCropSetStatus(manualCropStatusText());
+    }
+
+    function manualCropInvertRatio() {
+        const st = window.__idrManualCropState;
+        const parts = (st.ratio || "").split(':').map(Number);
+        if (st.ratio === "free" || parts.length !== 2 || !parts[0] || !parts[1]) {
+            manualCropSetStatus(manualCropStatusText('Free ratio has no orientation'), true);
+            return;
+        }
+        if (parts[0] === parts[1]) {
+            manualCropSetStatus(manualCropStatusText('Square ratio unchanged'));
+            return;
+        }
+        manualCropApplyRatio(`${parts[1]}:${parts[0]}`);
+    }
+
+    function manualCropComputeFrame(width, height) {
+        const st = window.__idrManualCropState;
+        const margin = Math.round(Math.min(width, height) * 0.11);
+        const maxW = width - margin * 2;
+        const maxH = height - margin * 2;
+        const ratio = manualCropRatioValue(st.ratio);
+        if (!ratio) {
+            if (!st.frame) {
+                st.frame = { x: margin, y: margin, w: maxW, h: maxH };
+            } else {
+                st.frame.x = Math.max(8, Math.min(st.frame.x, width - 64));
+                st.frame.y = Math.max(8, Math.min(st.frame.y, height - 64));
+                st.frame.w = Math.max(64, Math.min(st.frame.w, width - st.frame.x - 8));
+                st.frame.h = Math.max(64, Math.min(st.frame.h, height - st.frame.y - 8));
+            }
+            return st.frame;
+        }
+        let w = maxW;
+        let h = w / ratio;
+        if (h > maxH) {
+            h = maxH;
+            w = h * ratio;
+        }
+        st.frame = { x: (width - w) / 2, y: (height - h) / 2, w, h };
+        return st.frame;
+    }
+
+    function manualCropDraw() {
+        const { canvas, tool } = manualCropEls();
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const { width, height } = manualCropCanvasSize(canvas);
+        const st = window.__idrManualCropState;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#071019';
+        ctx.fillRect(0, 0, width, height);
+        const frame = manualCropComputeFrame(width, height);
+        if (!st.img) {
+            ctx.fillStyle = '#93a4b7';
+            ctx.font = `${Math.round(14 * (window.devicePixelRatio || 1))}px system-ui, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(tool?.dataset?.empty || 'Load the current image to begin.', width / 2, height / 2);
+            return;
+        }
+        const drawW = st.img.naturalWidth * st.scale;
+        const drawH = st.img.naturalHeight * st.scale;
+        const drawX = frame.x + frame.w / 2 - drawW / 2 + st.panX;
+        const drawY = frame.y + frame.h / 2 - drawH / 2 + st.panY;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(st.img, drawX, drawY, drawW, drawH);
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+        ctx.fillRect(0, 0, width, frame.y);
+        ctx.fillRect(0, frame.y + frame.h, width, height - frame.y - frame.h);
+        ctx.fillRect(0, frame.y, frame.x, frame.h);
+        ctx.fillRect(frame.x + frame.w, frame.y, width - frame.x - frame.w, frame.h);
+        ctx.strokeStyle = 'rgba(45, 212, 191, 0.95)';
+        ctx.lineWidth = 2 * (window.devicePixelRatio || 1);
+        ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.lineWidth = 1 * (window.devicePixelRatio || 1);
+        for (let i = 1; i < 3; i++) {
+            ctx.beginPath();
+            ctx.moveTo(frame.x + frame.w * i / 3, frame.y);
+            ctx.lineTo(frame.x + frame.w * i / 3, frame.y + frame.h);
+            ctx.moveTo(frame.x, frame.y + frame.h * i / 3);
+            ctx.lineTo(frame.x + frame.w, frame.y + frame.h * i / 3);
+            ctx.stroke();
+        }
+        if (st.ratio === "free") {
+            const hs = 10 * (window.devicePixelRatio || 1);
+            ctx.fillStyle = '#2dd4bf';
+            [[frame.x, frame.y], [frame.x + frame.w, frame.y], [frame.x, frame.y + frame.h], [frame.x + frame.w, frame.y + frame.h]].forEach(([x, y]) => {
+                ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
+            });
+        }
+        ctx.restore();
+    }
+
+    function manualCropClampPan() {
+        const { canvas } = manualCropEls();
+        const st = window.__idrManualCropState;
+        if (!canvas || !st.img) return;
+        const { width, height } = manualCropCanvasSize(canvas);
+        const frame = manualCropComputeFrame(width, height);
+        const minScale = Math.max(frame.w / st.img.naturalWidth, frame.h / st.img.naturalHeight);
+        st.scale = Math.max(minScale, Math.min(st.scale, minScale * 8));
+        const drawW = st.img.naturalWidth * st.scale;
+        const drawH = st.img.naturalHeight * st.scale;
+        const maxX = Math.max(0, (drawW - frame.w) / 2);
+        const maxY = Math.max(0, (drawH - frame.h) / 2);
+        st.panX = Math.max(-maxX, Math.min(maxX, st.panX));
+        st.panY = Math.max(-maxY, Math.min(maxY, st.panY));
+    }
+
+    function manualCropResetImage() {
+        const { canvas } = manualCropEls();
+        const st = window.__idrManualCropState;
+        if (!canvas || !st.img) return;
+        const { width, height } = manualCropCanvasSize(canvas);
+        const frame = manualCropComputeFrame(width, height);
+        st.scale = Math.max(frame.w / st.img.naturalWidth, frame.h / st.img.naturalHeight);
+        st.panX = 0;
+        st.panY = 0;
+        manualCropClampPan();
+        manualCropDraw();
+    }
+
+    function manualCropSourceImage() {
+        const sources = [
+            document.getElementById('viewer_area'),
+            document.getElementById('manual_crop_editor'),
+            document.getElementById('main_gallery')
+        ].filter(Boolean);
+        for (const source of sources) {
+            const imgs = Array.from(source.querySelectorAll('img')).filter(img => {
+                const src = img.currentSrc || img.src || '';
+                return src && !src.startsWith('data:image/svg') && img.naturalWidth > 0;
+            });
+            if (imgs.length) return imgs[0];
+        }
+        return null;
+    }
+
+    window.idrManualCropLoadFromEditor = function() {
+        const source = manualCropSourceImage();
+        if (!source) {
+            manualCropSetStatus('Current viewer image not ready yet.', true);
+            return;
+        }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            const st = window.__idrManualCropState;
+            st.img = img;
+            st.frame = null;
+            manualCropResetImage();
+            manualCropSetStatus(manualCropStatusText());
+        };
+        img.onerror = () => manualCropSetStatus('Could not load source image.', true);
+        img.src = source.src + (source.src.includes('?') ? '&' : '?') + 'cropcache=' + Date.now();
+    };
+
+    function manualCropHandleAt(x, y) {
+        const st = window.__idrManualCropState;
+        if (st.ratio !== "free" || !st.frame) return null;
+        const dpr = window.devicePixelRatio || 1;
+        const hit = 18 * dpr;
+        const f = st.frame;
+        const handles = [
+            ['nw', f.x, f.y], ['ne', f.x + f.w, f.y],
+            ['sw', f.x, f.y + f.h], ['se', f.x + f.w, f.y + f.h]
+        ];
+        for (const [name, hx, hy] of handles) {
+            if (Math.abs(x - hx) <= hit && Math.abs(y - hy) <= hit) return name;
+        }
+        return null;
+    }
+
+    function manualCropPointerPos(e) {
+        const { canvas } = manualCropEls();
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        return { x: (e.clientX - rect.left) * dpr, y: (e.clientY - rect.top) * dpr };
+    }
+
+    function manualCropResizeFrame(handle, dx, dy) {
+        const { canvas } = manualCropEls();
+        const st = window.__idrManualCropState;
+        if (st.ratio !== "free" || !st.frame || !canvas) return;
+        const { width, height } = manualCropCanvasSize(canvas);
+        const f = st.frame;
+        if (handle.includes('w')) { f.x += dx; f.w -= dx; }
+        if (handle.includes('e')) { f.w += dx; }
+        if (handle.includes('n')) { f.y += dy; f.h -= dy; }
+        if (handle.includes('s')) { f.h += dy; }
+        if (f.w < 64) f.w = 64;
+        if (f.h < 64) f.h = 64;
+        if (f.x < 8) { f.w += f.x - 8; f.x = 8; }
+        if (f.y < 8) { f.h += f.y - 8; f.y = 8; }
+        if (f.x + f.w > width - 8) f.w = width - 8 - f.x;
+        if (f.y + f.h > height - 8) f.h = height - 8 - f.y;
+    }
+
+    function manualCropPayload() {
+        const { canvas } = manualCropEls();
+        const st = window.__idrManualCropState;
+        if (!canvas || !st.img || !st.frame) return null;
+        const { width, height } = manualCropCanvasSize(canvas);
+        const frame = manualCropComputeFrame(width, height);
+        manualCropClampPan();
+        const drawW = st.img.naturalWidth * st.scale;
+        const drawH = st.img.naturalHeight * st.scale;
+        const drawX = frame.x + frame.w / 2 - drawW / 2 + st.panX;
+        const drawY = frame.y + frame.h / 2 - drawH / 2 + st.panY;
+        let x = (frame.x - drawX) / st.scale;
+        let y = (frame.y - drawY) / st.scale;
+        let w = frame.w / st.scale;
+        let h = frame.h / st.scale;
+        x = Math.max(0, Math.min(st.img.naturalWidth - 1, x));
+        y = Math.max(0, Math.min(st.img.naturalHeight - 1, y));
+        w = Math.max(1, Math.min(st.img.naturalWidth - x, w));
+        h = Math.max(1, Math.min(st.img.naturalHeight - y, h));
+        return { ratio: st.ratio, crop: { x, y, w, h }, sourceSize: { w: st.img.naturalWidth, h: st.img.naturalHeight } };
+    }
+
+    function manualCropCommit(goNext=false) {
+        const { payloadInput, payloadBtn } = manualCropEls();
+        const payload = manualCropPayload();
+        if (!payload) {
+            manualCropSetStatus('Load an image first.', true);
+            return;
+        }
+        payload.goNext = !!goNext;
+        window.__idrManualCropGoNext = false;
+        if (payloadInput && payloadBtn) {
+            setNativeValue(payloadInput, JSON.stringify(payload));
+            manualCropSetStatus(goNext ? 'Saving crop and moving next...' : 'Saving crop...');
+            payloadBtn.click();
+        }
+    }
+
+    function manualCropIsUsable() {
+        const { tool, canvas } = manualCropEls();
+        if (!tool || !canvas) return false;
+        const r = tool.getBoundingClientRect();
+        const visible = !!(r.width || r.height || tool.getClientRects().length);
+        if (!visible) return false;
+        const intersectsViewport = r.bottom > 0 && r.top < window.innerHeight;
+        const focusInside = tool.contains(document.activeElement);
+        return intersectsViewport || focusInside;
+    }
+
+    function setupManualCropTool() {
+        const { canvas } = manualCropEls();
+        const tool = document.getElementById('manual_crop_canvas_tool');
+        if (!canvas || !tool || tool.dataset.cropReady) return;
+        tool.dataset.cropReady = "true";
+        const st = window.__idrManualCropState;
+        tool.querySelectorAll('.manual-ratio-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                manualCropApplyRatio(btn.dataset.ratio || "1:1");
+            });
+        });
+        document.getElementById('manual_crop_use_loaded')?.addEventListener('click', () => window.idrManualCropLoadFromEditor());
+        document.getElementById('manual_crop_overwrite')?.addEventListener('click', () => manualCropCommit(false));
+        canvas.addEventListener('pointerdown', e => {
+            if (!st.img) return;
+            const pos = manualCropPointerPos(e);
+            st.dragging = true;
+            st.activeHandle = manualCropHandleAt(pos.x, pos.y);
+            st.dragMode = st.activeHandle ? 'resize' : 'pan';
+            st.lastX = pos.x;
+            st.lastY = pos.y;
+            canvas.classList.add('dragging');
+            canvas.setPointerCapture(e.pointerId);
+        });
+        canvas.addEventListener('pointermove', e => {
+            if (!st.dragging) return;
+            const pos = manualCropPointerPos(e);
+            const dx = pos.x - st.lastX;
+            const dy = pos.y - st.lastY;
+            if (st.dragMode === 'resize') {
+                manualCropResizeFrame(st.activeHandle, dx, dy);
+            } else {
+                st.panX += dx;
+                st.panY += dy;
+                manualCropClampPan();
+            }
+            st.lastX = pos.x;
+            st.lastY = pos.y;
+            manualCropDraw();
+        });
+        canvas.addEventListener('pointerup', e => {
+            st.dragging = false;
+            st.activeHandle = null;
+            canvas.classList.remove('dragging');
+            try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+        });
+        canvas.addEventListener('wheel', e => {
+            if (!st.img) return;
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.08 : 0.925;
+            st.scale *= factor;
+            manualCropClampPan();
+            manualCropDraw();
+        }, { passive: false });
+        window.addEventListener('resize', () => setTimeout(manualCropDraw, 80));
+        manualCropDraw();
+    }
+
+    if (!window.__idrManualCropKeyboardReady) {
+        window.__idrManualCropKeyboardReady = true;
+        document.addEventListener('keydown', function(e) {
+            if (!manualCropIsUsable()) return;
+            const target = e.target;
+            const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+            if (isInput) return;
+            if (e.code === 'ArrowLeft') {
+                e.preventDefault();
+                e.stopPropagation();
+                document.getElementById('manual_crop_prev_btn')?.click();
+                return;
+            }
+            if (e.code === 'ArrowRight') {
+                e.preventDefault();
+                e.stopPropagation();
+                document.getElementById('manual_crop_next_btn')?.click();
+                return;
+            }
+            if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+                e.preventDefault();
+                e.stopPropagation();
+                manualCropInvertRatio();
+                return;
+            }
+            if (e.code === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                manualCropCommit(true);
+            }
+        }, true);
+    }
+
     setupDatasetPathDropZone();
     installStaticTooltips();
+    installLanguageAutodetect();
+    setupManualCropTool();
+    setupLiveTranslationBridge();
+    setupReverseTranslationBridge();
 
     const observer = new MutationObserver(() => { 
-        updateGalleryVisuals(); setupAutocomplete(); setupDatasetPathDropZone(); installStaticTooltips();
+        updateGalleryVisuals(); setupAutocomplete(); setupLiveTranslationBridge(); setupReverseTranslationBridge(); setupDatasetPathDropZone(); installStaticTooltips(); installLanguageAutodetect(); setupManualCropTool();
         const trackedWrapper = document.getElementById('tracked_words_input'); const trackedInput = trackedWrapper ? trackedWrapper.querySelector('textarea') : null;
         if (trackedInput && !trackedInput.dataset.commaListener) {
             trackedInput.dataset.commaListener = "true";
@@ -686,6 +2472,21 @@ function() {
 
         if (e.altKey && e.code === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); document.getElementById('btn_move_up')?.click(); return; }
         if (e.altKey && e.code === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); document.getElementById('btn_move_down')?.click(); return; }
+        if (e.code === 'Escape') {
+            const searchBox = document.querySelector('input[placeholder*="mot"], input[placeholder*="word"]');
+            if (searchBox && document.activeElement === searchBox) {
+                e.preventDefault(); e.stopPropagation();
+                setNativeValue(searchBox, '');
+                searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+                return;
+            }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyC' || e.key.toLowerCase() === 'c')) {
+            e.preventDefault(); e.stopPropagation();
+            const capArea = document.querySelector('#viewer_caption_area textarea');
+            if (capArea && capArea.value) navigator.clipboard.writeText(capArea.value);
+            return;
+        }
         if (isInput && !e.altKey && !e.ctrlKey && !e.metaKey && e.code !== 'PageUp' && e.code !== 'PageDown') return;
 
         if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyA' || e.key.toLowerCase() === 'a')) {
@@ -699,6 +2500,43 @@ function() {
             return;
         }
 
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.code === 'KeyD' || e.key.toLowerCase() === 'd')) {
+            if (isInput) return;
+            e.preventDefault(); e.stopPropagation();
+            document.getElementById('hidden_copy_next_btn')?.click();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.key.toLowerCase() === 'z') && !e.shiftKey) {
+            if (isInput) return;
+            e.preventDefault(); e.stopPropagation();
+            document.getElementById('btn_undo')?.click();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
+            if (isInput) return;
+            e.preventDefault(); e.stopPropagation();
+            const tabIdx = parseInt(e.key) - 1;
+            const allTabLabels = Array.from(document.querySelectorAll('.tab-container.visually-hidden button'));
+            const targetLabel = allTabLabels[tabIdx]?.textContent?.trim();
+            if (!targetLabel) {
+                const tabs = document.querySelectorAll('button[role="tab"]');
+                if (tabs[tabIdx]) tabs[tabIdx].click();
+                return;
+            }
+            const visibleTab = Array.from(document.querySelectorAll('button[role="tab"]')).find(btn => btn.textContent.trim() === targetLabel);
+            if (visibleTab) {
+                visibleTab.click();
+                return;
+            }
+            const overflowItem = Array.from(document.querySelectorAll('.overflow-dropdown button')).find(btn => btn.textContent.trim() === targetLabel);
+            if (overflowItem) {
+                if (overflowItem.closest('.overflow-dropdown')?.classList.contains('hide')) {
+                    document.querySelector('.overflow-menu > button')?.click();
+                }
+                setTimeout(() => overflowItem.click(), 30);
+            }
+            return;
+        }
         if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) { e.preventDefault(); e.stopPropagation(); const searchBox = document.querySelector('input[placeholder*="mot"], input[placeholder*="word"]'); if (searchBox) { searchBox.focus(); searchBox.select(); } return; }
         if (e.altKey && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) { e.preventDefault(); e.stopPropagation(); document.getElementById('toggle_tag_btn')?.click(); return; }
         if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) { e.preventDefault(); e.stopPropagation(); document.getElementById('save_single_btn')?.click(); return; }
@@ -707,6 +2545,13 @@ function() {
         if (e.code === 'PageUp') { e.preventDefault(); document.getElementById('prev_btn')?.click(); return; }
         if (e.code === 'PageDown') { e.preventDefault(); document.getElementById('next_btn')?.click(); return; }
         if (isInput) return;
+        if (e.code === 'Delete') {
+            e.preventDefault(); e.stopPropagation();
+            if (confirm('⚠️ Supprimer cette image définitivement ? / Delete this image permanently?')) {
+                document.getElementById('hidden_delete_current_btn')?.click();
+            }
+            return;
+        }
         if (e.code === 'ArrowLeft' || e.key === 'ArrowLeft') { e.preventDefault(); document.getElementById('prev_btn')?.click(); }
         if (e.code === 'ArrowRight' || e.key === 'ArrowRight') { e.preventDefault(); document.getElementById('next_btn')?.click(); }
     }, true); 
@@ -766,6 +2611,17 @@ function() {
     setInterval(() => {
         const wrapper = document.getElementById('hidden_sync_input');
         const selInput = wrapper ? wrapper.querySelector('textarea, input') : null;
+        if (selInput && selInput.value && selInput.value.startsWith('__SET_SELECTION__')) {
+            try {
+                const payload = JSON.parse(selInput.value.substring('__SET_SELECTION__'.length));
+                window.gallerySelectedIndices = new Set((payload.selected || []).map(Number));
+                window.lastClickedIndex = Number.isInteger(payload.viewIndex) ? payload.viewIndex : window.lastClickedIndex;
+                updateGalleryVisuals();
+                selInput.value = '__SELECTION_APPLIED__';
+            } catch(err) {
+                selInput.value = '__SELECTION_ERROR__';
+            }
+        }
         if (selInput && selInput.value === '{}' && window.gallerySelectedIndices.size > 0) {
             window.gallerySelectedIndices.clear();
             updateGalleryVisuals();
@@ -838,6 +2694,53 @@ def _safe_scandir(path):
     except Exception:
         return []
 
+def _windows_drive_roots():
+    if os.name != "nt":
+        return []
+    roots = []
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        root = f"{letter}:\\"
+        if os.path.exists(root):
+            roots.append(root)
+    return roots
+
+def _pinokio_drop_search_roots():
+    """Racines probables Pinokio/ComfyUI, y compris sur les lecteurs externes."""
+    bases = []
+    if os.name == "nt":
+        for drive in _windows_drive_roots():
+            bases.append(os.path.join(drive, "Pinokio"))
+            bases.append(os.path.join(drive, "pinokio"))
+    else:
+        bases.append("/pinokio")
+    bases.append(os.path.join(os.path.expanduser("~"), "pinokio"))
+
+    rels = (
+        os.path.join("ComfyUI.git", "app", "models", "loras"),
+        os.path.join("ComfyUI.git", "app", "models"),
+        os.path.join("ComfyUI.git", "app"),
+        "ComfyUI.git",
+        os.path.join("api", "comfyui.git", "app", "models", "loras"),
+        os.path.join("api", "comfyui.git", "app", "models"),
+        os.path.join("api", "comfyui.git", "app"),
+        os.path.join("api", "comfyui.git"),
+        "api",
+        "",
+    )
+
+    roots = []
+    seen = set()
+    for base in bases:
+        for rel in rels:
+            path = os.path.join(base, rel) if rel else base
+            key = os.path.normcase(os.path.abspath(path))
+            if key in seen:
+                continue
+            seen.add(key)
+            if os.path.isdir(path):
+                roots.append(path)
+    return roots
+
 def _iter_drop_search_roots(root_name=""):
     roots = []
     def add(p):
@@ -862,6 +2765,8 @@ def _iter_drop_search_roots(root_name=""):
     add(os.path.expanduser("~"))
     add(os.environ.get("TEMP"))
     add(os.environ.get("TMP"))
+    for pinokio_root in _pinokio_drop_search_roots():
+        add(pinokio_root)
     for sub in (
         "pinokio",
         os.path.join("pinokio", "api"),
@@ -873,8 +2778,8 @@ def _iter_drop_search_roots(root_name=""):
     ):
         add(os.path.join(os.path.expanduser("~"), sub))
     if os.name == "nt":
-        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-            add(f"{letter}:\\")
+        for root in _windows_drive_roots():
+            add(root)
     else:
         add("/")
 
@@ -898,6 +2803,8 @@ def _likely_drop_search_roots(root_name=""):
         if os.path.isdir(p) and p not in roots:
             roots.append(p)
 
+    for pinokio_root in _pinokio_drop_search_roots():
+        add(pinokio_root)
     for fav in load_favorites():
         add(fav)
         add(os.path.dirname(fav))
@@ -931,8 +2838,33 @@ def _candidate_file_signature(directory, limit=240):
                 return files
     return files
 
-def _score_drop_candidate(directory, signature_files):
-    candidate_files = _candidate_file_signature(directory)
+def _candidate_file_signature_shallow(directory, limit=240):
+    files = []
+    entries = _safe_scandir(directory)
+    pruned = {".git", "__pycache__", "venv", "node_modules"}
+    child_dirs = []
+    for entry in entries:
+        try:
+            if entry.is_file(follow_symlinks=False):
+                files.append(entry.name)
+            elif entry.is_dir(follow_symlinks=False) and entry.name.lower() not in pruned:
+                child_dirs.append(entry)
+        except Exception:
+            continue
+        if len(files) >= limit:
+            return files
+    for child_dir in child_dirs:
+        for child in _safe_scandir(child_dir.path):
+            try:
+                if child.is_file(follow_symlinks=False):
+                    files.append(os.path.join(child_dir.name, child.name).replace("\\", "/"))
+            except Exception:
+                continue
+            if len(files) >= limit:
+                return files
+    return files
+
+def _score_file_signature(candidate_files, signature_files):
     candidate_lower = {os.path.basename(f).lower() for f in candidate_files}
     candidate_rel = {f.lower().replace("\\", "/") for f in candidate_files}
     sig_rel = {str(f).lower().replace("\\", "/") for f in signature_files if f}
@@ -941,6 +2873,12 @@ def _score_drop_candidate(directory, signature_files):
     if image_names and not any(n in candidate_lower for n in image_names):
         return 0
     return (len(sig_rel & candidate_rel) * 3) + len(sig_names & candidate_lower)
+
+def _score_drop_candidate(directory, signature_files, recursive=True):
+    shallow_score = _score_file_signature(_candidate_file_signature_shallow(directory), signature_files)
+    if shallow_score or not recursive:
+        return shallow_score
+    return _score_file_signature(_candidate_file_signature(directory), signature_files)
 
 def _walk_dirs_limited(root, timeout_at, max_dirs=12000, max_depth=12):
     root = os.path.abspath(root)
@@ -982,11 +2920,11 @@ def find_dataset_dir_from_drop_signature(signature, timeout_sec=10):
     roots = _iter_drop_search_roots(root_name)
     likely_roots = _likely_drop_search_roots(root_name)
 
-    def consider(path):
+    def consider(path, recursive=True):
         nonlocal best_path, best_score
         if not os.path.isdir(path):
             return
-        score = _score_drop_candidate(path, signature_files)
+        score = _score_drop_candidate(path, signature_files, recursive=recursive)
         if score > best_score:
             best_score = score
             best_path = path
@@ -1007,13 +2945,17 @@ def find_dataset_dir_from_drop_signature(signature, timeout_sec=10):
             consider(root)
             if best_score >= needed_score:
                 return best_path
+        elif not expected_name:
+            consider(root, recursive=False)
+            if best_score >= needed_score:
+                return best_path
 
     focused_timeout = start + min(timeout_sec, 7)
     for likely_root in likely_roots:
         for candidate in _walk_dirs_limited(likely_root, focused_timeout, max_dirs=18000, max_depth=14):
             if expected_name and os.path.basename(candidate).lower() != expected_name:
                 continue
-            consider(candidate)
+            consider(candidate, recursive=bool(expected_name))
             if best_score >= needed_score:
                 return best_path
         if time.monotonic() > focused_timeout:
@@ -1033,6 +2975,10 @@ def find_dataset_dir_from_drop_signature(signature, timeout_sec=10):
             continue
         if expected_name and base == expected_name:
             consider(current)
+            if best_score >= needed_score:
+                return best_path
+        elif not expected_name:
+            consider(current, recursive=False)
             if best_score >= needed_score:
                 return best_path
         for entry in _safe_scandir(current):
@@ -1086,23 +3032,54 @@ def natural_sort_key(s):
             out.append((0, p))
     return out
 
+def selection_summary_html(selected_count, filtered_count, total_count, lang):
+    selected_count = int(selected_count or 0)
+    filtered_count = int(filtered_count or 0)
+    total_count = int(total_count or 0)
+    if lang == "EN":
+        text = f"✅ {selected_count} selected · {filtered_count} filtered · {total_count} total"
+    else:
+        text = f"✅ {selected_count} sélectionnées · {filtered_count} filtrées · {total_count} au total"
+    return f"<div class='selection-status-pill'>{text}</div>"
+
+def _reindex_dataset(dataset):
+    for idx, item in enumerate(dataset or []):
+        item['id'] = idx
+    return dataset
+
+def _refresh_duplicate_mapping_ids(mapping, dataset):
+    if not mapping:
+        return {}
+    by_path = {item.get('img_path'): item.get('id') for item in dataset or []}
+    refreshed = {}
+    for name, data in list(mapping.items()):
+        id_a = by_path.get(data.get("imgA"))
+        id_b = by_path.get(data.get("imgB"))
+        if id_a is None or id_b is None:
+            continue
+        data = dict(data)
+        data["idA"] = id_a
+        data["idB"] = id_b
+        refreshed[name] = data
+    return refreshed
+
 def sort_dataset(dataset, order, lang, msg_no_sel, all_tags_str=""):
     if not dataset: return [], [], [], "", "{}", -1
     reverse = (order == "Z-A")
     dataset = sorted(dataset, key=lambda x: natural_sort_key(x['img_name']), reverse=reverse)
-    for idx, item in enumerate(dataset): item['id'] = idx
+    _reindex_dataset(dataset)
         
     gal_items = get_gallery_items(dataset, lang)
     success_msg = MSG[lang].get("images_loaded", "{count} images loaded.").format(count=len(dataset))
     gr.Info(success_msg)
-    return dataset, dataset, [], success_msg, gal_items, [], msg_no_sel, "{}", all_tags_str or extract_all_tags(dataset), -1
+    return dataset, dataset, [], success_msg, gal_items, [], selection_summary_html(0, len(dataset), len(dataset), lang), "{}", all_tags_str or extract_all_tags(dataset), -1
 
 def load_dataset(directory, sort_order, lang):
     msg_no_sel = MSG[lang].get("no_selection", "Aucune sélection active.")
     # Accepter aussi bien les chemins absolus que relatifs ; normaliser.
     directory = normalize_dataset_path(directory)
     if not directory or not os.path.isdir(directory):
-        return [], [], [], MSG[lang].get("folder_not_found", "Dossier introuvable."), [], [], msg_no_sel, "{}", "", -1
+        return [], [], [], MSG[lang].get("folder_not_found", "Dossier introuvable."), [], [], selection_summary_html(0, 0, 0, lang), "{}", "", -1
     dataset = []
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
     idx = 0
@@ -1120,17 +3097,22 @@ def load_dataset(directory, sort_order, lang):
     if not dataset:
         msg = MSG[lang].get("no_images_found", "No supported images found in this folder.")
         gr.Warning(msg)
-        return [], [], [], msg, [], [], msg_no_sel, "{}", "", -1
+        return [], [], [], msg, [], [], selection_summary_html(0, 0, 0, lang), "{}", "", -1
+    save_recent_path(directory)
     return sort_dataset(dataset, sort_order, lang, msg_no_sel, extract_all_tags(dataset))
 
 def filter_gallery(dataset, search_text, sort_order, lang):
-    if not dataset: return [], [], [], "", "{}", -1
+    if not dataset: return [], [], [], selection_summary_html(0, 0, 0, lang), "{}", -1
     filtered = dataset
     if search_text:
-        filtered = [item for item in dataset if search_text.lower() in item['caption'].lower()]
+        tags = [t.strip().lower() for t in search_text.split(',') if t.strip()]
+        if len(tags) > 1:
+            filtered = [item for item in dataset if all(tag in item['caption'].lower() for tag in tags)]
+        else:
+            filtered = [item for item in dataset if search_text.lower() in item['caption'].lower()]
     reverse = (sort_order == "Z-A")
     filtered = sorted(filtered, key=lambda x: natural_sort_key(x['img_name']), reverse=reverse)
-    return filtered, get_gallery_items(filtered, lang), [], "", "{}", -1
+    return filtered, get_gallery_items(filtered, lang), [], selection_summary_html(0, len(filtered), len(dataset), lang), "{}", -1
 
 def get_highlighted_html(caption, tracked_words_str):
     if not caption: return "<div style='padding:10px; background:var(--bg-color); border-radius:5px;'></div>"
@@ -1147,7 +3129,13 @@ def get_highlighted_html(caption, tracked_words_str):
 def update_word_count(text, lang):
     if not text: return MSG[lang].get("0_words", "0 words")
     words = len(text.split())
-    tokens = int(words * 1.3)
+    if HAS_TIKTOKEN:
+        try:
+            tokens = len(_TIKTOKEN_ENC.encode(text))
+        except Exception:
+            tokens = int(words * 1.3)
+    else:
+        tokens = int(words * 1.3)
     color = "#ff4444" if tokens > 225 else "#44ff44"
     warning = MSG[lang].get("truncation_risk", "") if tokens > 225 else ""
     return f"<div style='color:{color}; font-weight:bold;'>{words} {MSG[lang].get('word_count','words')} (~{tokens} {MSG[lang].get('token_count','tokens')}){warning}</div>"
@@ -1165,6 +3153,11 @@ def update_viewer(filtered_dataset, idx, tracked_words, lang):
     msg = MSG[lang].get("viewing_img", "Viewing: {name}").format(name=item['img_name'])
     return item['img_path'], get_highlighted_html(item['caption'], tracked_words), item['caption'], update_word_count(item['caption'], lang), idx, msg
 
+def show_first_after_dataset_load(filtered_dataset, tracked_words, lang):
+    """Affiche directement la première image après un chargement de dataset."""
+    return update_viewer(filtered_dataset, 0 if filtered_dataset else -1, tracked_words, lang)
+
+
 def silent_save(dataset, filtered_dataset, idx, new_caption, lang):
     if not filtered_dataset or idx < 0 or idx >= len(filtered_dataset): return
     item_filtered = filtered_dataset[idx]
@@ -1176,8 +3169,8 @@ def silent_save(dataset, filtered_dataset, idx, new_caption, lang):
     dataset[real_id]['caption'] = new_caption
     with open(item_filtered['txt_path'], 'w', encoding='utf-8') as f: f.write(new_caption)
 
-def clear_selection(lang): 
-    return [], MSG[lang].get("no_sel_all", "Aucune sélection (Le Batch impactera **TOUT** le dataset)."), "{}"
+def clear_selection(dataset, filtered_dataset, lang):
+    return [], selection_summary_html(0, len(filtered_dataset or []), len(dataset or []), lang), "{}"
 
 def handle_sync(payload_str, dataset, filtered_dataset, old_idx, old_caption, tracked_words, lang):
     silent_save(dataset, filtered_dataset, old_idx, old_caption, lang)
@@ -1188,7 +3181,7 @@ def handle_sync(payload_str, dataset, filtered_dataset, old_idx, old_caption, tr
     except:
         sel_js = []; view_idx = 0
     real_ids = [filtered_dataset[i]['id'] for i in sel_js if 0 <= i < len(filtered_dataset)] if filtered_dataset else []
-    sel_text = MSG[lang].get("selected_multi", "✅ **{count}** sélectionnée(s)").format(count=len(real_ids)) if real_ids else ""
+    sel_text = selection_summary_html(len(real_ids), len(filtered_dataset or []), len(dataset or []), lang)
     img_path, hl_html, cap, wc, c_idx, v_status = update_viewer(filtered_dataset, view_idx, tracked_words, lang)
     return dataset, filtered_dataset, real_ids, sel_text, img_path, hl_html, cap, wc, c_idx, v_status, extract_all_tags(dataset)
 
@@ -1223,6 +3216,50 @@ def nav_next(dataset, filtered_dataset, idx, current_caption, tracked_words, lan
     new_idx = (idx + 1) % len(filtered_dataset) if idx >= 0 else 0
     res = update_viewer(filtered_dataset, new_idx, tracked_words, lang)
     return (dataset, filtered_dataset) + res
+
+def delete_current_image(dataset, filtered_dataset, idx, tracked_words, lang):
+    if not filtered_dataset or idx < 0 or idx >= len(filtered_dataset):
+        msg = MSG[lang].get("no_img_sel", "No image selected.")
+        return (
+            dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang),
+            None, get_highlighted_html("", tracked_words), "", update_word_count("", lang),
+            msg, -1, [], selection_summary_html(0, len(filtered_dataset or []), len(dataset or []), lang),
+            "{}", extract_all_tags(dataset)
+        )
+    item_to_del = filtered_dataset[idx]
+    try:
+        if os.path.exists(item_to_del['img_path']):
+            os.remove(item_to_del['img_path'])
+        if os.path.exists(item_to_del['txt_path']):
+            os.remove(item_to_del['txt_path'])
+    except Exception as e:
+        msg = f"Impossible de supprimer: {e}"
+        gr.Warning(msg)
+        img_path, hl_html, cap, wc, c_idx, v_status = update_viewer(filtered_dataset, idx, tracked_words, lang)
+        return (
+            dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang),
+            img_path, hl_html, cap, wc, msg, c_idx, [], selection_summary_html(0, len(filtered_dataset or []), len(dataset or []), lang),
+            "{}", extract_all_tags(dataset)
+        )
+
+    deleted_id = item_to_del.get('id')
+    dataset = [x for x in dataset if x.get('id') != deleted_id]
+    filtered_dataset = [x for x in filtered_dataset if x.get('id') != deleted_id]
+    _reindex_dataset(dataset)
+    id_by_path = {item.get('img_path'): item.get('id') for item in dataset}
+    for item in filtered_dataset:
+        if item.get('img_path') in id_by_path:
+            item['id'] = id_by_path[item.get('img_path')]
+    new_idx = min(idx, len(filtered_dataset) - 1)
+    img_path, hl_html, cap, wc, c_idx, v_status = update_viewer(filtered_dataset, new_idx, tracked_words, lang)
+    msg = f"🗑️ Supprimé : {item_to_del.get('img_name', '')}"
+    gr.Info(msg)
+    return (
+        dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang),
+        img_path, hl_html, cap, wc, msg if not v_status else v_status,
+        c_idx, [], selection_summary_html(0, len(filtered_dataset or []), len(dataset or []), lang),
+        "{}", extract_all_tags(dataset)
+    )
 
 def undo_last_action(dataset, history, current_idx, tracked_words, lang):
     if not history: return dataset, dataset, MSG[lang].get("nothing_to_undo", "Nothing"), "", get_highlighted_html("", tracked_words), update_word_count("", lang)
@@ -1331,6 +3368,11 @@ def pick_favorite(selected, lang):
     """Sélectionne un favori : renvoie le chemin pour le champ dir_input."""
     return selected or ""
 
+def load_favorite_dataset(selected, sort_order, lang):
+    """Charge directement le dataset choisi dans les favoris."""
+    path = selected or ""
+    return (gr.update(value=path),) + tuple(load_dataset(path, sort_order, lang))
+
 # ==========================================
 # 🤖 PARAMÈTRES IA PERSISTANTS
 # ==========================================
@@ -1361,6 +3403,7 @@ def load_ai_settings_for_ui():
         settings.get("api_key", DEFAULT_AI_SETTINGS["api_key"]),
         settings.get("temperature", DEFAULT_AI_SETTINGS["temperature"]),
         settings.get("context", DEFAULT_AI_SETTINGS["context"]),
+        settings.get("timeout", DEFAULT_AI_SETTINGS["timeout"]),
         settings.get("system_prompt", DEFAULT_AI_SETTINGS["system_prompt"]),
     )
 
@@ -1371,7 +3414,14 @@ def _write_ai_settings(settings):
     except Exception as e:
         print(f"⚠️ Impossible de sauver {AI_SETTINGS_FILE} : {e}")
 
-def save_ai_settings(api_backend, vlm_model, llm_model, api_url, api_key, temperature, context, system_prompt):
+def _safe_timeout(value):
+    try:
+        timeout = int(float(value))
+    except Exception:
+        timeout = DEFAULT_AI_SETTINGS["timeout"]
+    return max(15, min(timeout, 1800))
+
+def save_ai_settings(api_backend, vlm_model, llm_model, api_url, api_key, temperature, context, timeout, system_prompt):
     settings = load_ai_settings()
     settings.update({
         "api_backend": api_backend or DEFAULT_AI_SETTINGS["api_backend"],
@@ -1381,6 +3431,7 @@ def save_ai_settings(api_backend, vlm_model, llm_model, api_url, api_key, temper
         "api_key": api_key or "",
         "temperature": float(temperature) if temperature not in (None, "") else DEFAULT_AI_SETTINGS["temperature"],
         "context": int(float(context)) if context not in (None, "") else DEFAULT_AI_SETTINGS["context"],
+        "timeout": _safe_timeout(timeout),
         "system_prompt": system_prompt or "",
     })
     _write_ai_settings(settings)
@@ -1574,7 +3625,7 @@ def lm_studio_unload_model(model_id, api_url, lang):
             last_error = str(e)
     return m.get("lm_studio_error", "❌ LM Studio error: {error}").format(error=last_error)
 
-def save_lm_studio_model_choices(vlm_choice, llm_choice, shared_choice, api_backend, api_url, api_key, temperature, context, system_prompt, lang):
+def save_lm_studio_model_choices(vlm_choice, llm_choice, shared_choice, api_backend, api_url, api_key, temperature, context, timeout, system_prompt, lang):
     """Sauvegarde les choix LM Studio et synchronise les champs utilisés par les actions IA."""
     m = MSG.get(lang, MSG.get("FR", {}))
     shared = (shared_choice or "").strip()
@@ -1590,6 +3641,7 @@ def save_lm_studio_model_choices(vlm_choice, llm_choice, shared_choice, api_back
         "api_key": api_key or "",
         "temperature": float(temperature) if temperature not in (None, "") else DEFAULT_AI_SETTINGS["temperature"],
         "context": int(float(context)) if context not in (None, "") else DEFAULT_AI_SETTINGS["context"],
+        "timeout": _safe_timeout(timeout),
         "system_prompt": system_prompt or "",
     })
     _write_ai_settings(settings)
@@ -1600,6 +3652,265 @@ def save_lm_studio_model_choices(vlm_choice, llm_choice, shared_choice, api_back
 # ==========================================
 # 📚 NOUVEAU MODULE: BIBLIOTHÈQUE CUSTOM
 # ==========================================
+
+def load_library():
+    if not os.path.exists(LIBRARY_FILE):
+        return []
+    try:
+        with open(LIBRARY_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            normalized = []
+            for item in data:
+                if isinstance(item, str):
+                    text = item.strip()
+                elif isinstance(item, dict):
+                    text = str(item.get("text", "")).strip()
+                else:
+                    text = ""
+                if text and not any(x["text"].lower() == text.lower() for x in normalized):
+                    normalized.append({"text": text, "selected": False})
+            return normalized
+    except Exception as e:
+        print(f"⚠️ Impossible de lire {LIBRARY_FILE} : {e}")
+    return []
+
+def save_library(lib_state):
+    try:
+        cleaned = []
+        for item in lib_state or []:
+            text = str(item.get("text", "") if isinstance(item, dict) else item).strip()
+            if text and not any(x["text"].lower() == text.lower() for x in cleaned):
+                cleaned.append({"text": text})
+        with open(LIBRARY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cleaned, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Impossible de sauver {LIBRARY_FILE} : {e}")
+
+# ==========================================
+# CHEMINS RÉCENTS
+# ==========================================
+
+def load_recent_paths():
+    settings = load_ui_settings()
+    return settings.get("recent_paths", [])
+
+def save_recent_path(path):
+    if not path:
+        return
+    settings = load_ui_settings()
+    recents = settings.get("recent_paths", [])
+    path = os.path.normpath(path)
+    if path in recents:
+        recents.remove(path)
+    recents.insert(0, path)
+    recents = recents[:10]
+    settings["recent_paths"] = recents
+    try:
+        with open(UI_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Impossible de sauver recent_paths : {e}")
+
+# ==========================================
+# IMPORT / EXPORT CSV CAPTIONS
+# ==========================================
+
+def export_captions_csv(dataset, lang):
+    import csv
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not dataset:
+        msg = m.get("no_dataset", "No dataset.")
+        gr.Warning(msg)
+        return msg
+    first_img_path = dataset[0].get("img_path") if isinstance(dataset[0], dict) else ""
+    export_dir = os.path.dirname(first_img_path) if first_img_path else ""
+    if not export_dir or not os.path.isdir(export_dir):
+        msg = m.get("folder_not_found", "Dossier introuvable.")
+        gr.Warning(msg)
+        return msg
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    path = os.path.normpath(os.path.join(export_dir, f"captions_{stamp}.csv"))
+    try:
+        # Séparateur ";" car les captions contiennent des virgules (listes de tags)
+        # et Excel en locale française utilise aussi ";" par défaut
+        with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f, delimiter=';')
+            writer.writerow(["Numéro", "Fichier", "Caption"])
+            for i, item in enumerate(dataset):
+                writer.writerow([i + 1, item['img_name'], item['caption']])
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+        filename = os.path.basename(path)
+        if lang == "EN":
+            msg = f"✅ Captions CSV exported in current dataset folder: {filename}\n📁 {export_dir}"
+        else:
+            msg = f"✅ CSV captions exporté dans le dossier du dataset : {filename}\n📁 {export_dir}"
+        gr.Info(msg)
+        return msg
+    except Exception as e:
+        return f"❌ {e}"
+
+def _get_dataset_export_dir(dataset, lang):
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not dataset:
+        msg = m.get("no_dataset", "No dataset.")
+        gr.Warning(msg)
+        return None, msg
+    first_img_path = dataset[0].get("img_path") if isinstance(dataset[0], dict) else ""
+    export_dir = os.path.dirname(first_img_path) if first_img_path else ""
+    if not export_dir or not os.path.isdir(export_dir):
+        msg = m.get("folder_not_found", "Dossier introuvable.")
+        gr.Warning(msg)
+        return None, msg
+    return export_dir, ""
+
+def export_captions_md(dataset, lang):
+    export_dir, error_msg = _get_dataset_export_dir(dataset, lang)
+    if not export_dir:
+        return error_msg
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    path = os.path.normpath(os.path.join(export_dir, f"captions_{stamp}.md"))
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write("# IMG Dataset Refiner Caption Export\n\n")
+            f.write("| Numéro | Fichier | Caption |\n")
+            f.write("| ---: | --- | --- |\n\n")
+            for i, item in enumerate(dataset):
+                caption = str(item.get('caption', '')).replace("```", "'''").strip()
+                f.write(f"## {i + 1}. {item.get('img_name', '')}\n\n")
+                f.write(f"- Numéro: {i + 1}\n")
+                f.write(f"- Fichier: {item.get('img_name', '')}\n")
+                f.write("- Caption:\n\n")
+                f.write("```caption\n")
+                f.write(caption)
+                f.write("\n```\n\n")
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+        filename = os.path.basename(path)
+        if lang == "EN":
+            msg = f"✅ Captions MD exported in current dataset folder: {filename}\n📁 {export_dir}"
+        else:
+            msg = f"✅ MD captions exporté dans le dossier du dataset : {filename}\n📁 {export_dir}"
+        gr.Info(msg)
+        return msg
+    except Exception as e:
+        return f"❌ {e}"
+
+def _detect_csv_delimiter(path):
+    """Détecte automatiquement le séparateur du CSV (,  ou ;  ou tab)."""
+    import csv
+    try:
+        with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            sample = f.read(4096)
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
+        return dialect.delimiter
+    except Exception:
+        # Fallback : compte les occurrences de ; et , sur la première ligne
+        first_line = sample.split('\n')[0] if sample else ''
+        return ';' if first_line.count(';') >= first_line.count(',') else ','
+
+def import_captions_csv(csv_file, dataset, lang):
+    import csv as csv_mod
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not csv_file or not dataset:
+        msg = m.get("no_dataset", "No dataset.")
+        gr.Warning(msg)
+        return dataset, msg
+    try:
+        src = csv_file if isinstance(csv_file, str) else (csv_file.name if hasattr(csv_file, "name") else str(csv_file))
+        delim = _detect_csv_delimiter(src)
+        with open(src, 'r', encoding='utf-8-sig', errors='replace') as f:
+            reader = csv_mod.DictReader(f, delimiter=delim)
+            rows = list(reader)
+        name_to_item = {item['img_name']: item for item in dataset}
+        count = 0
+        for row in rows:
+            filename = (row.get('Fichier') or row.get('File') or row.get('fichier') or '').strip()
+            caption = (row.get('Caption') or row.get('caption') or '').strip()
+            if filename in name_to_item and caption:
+                item = name_to_item[filename]
+                item['caption'] = caption
+                dataset[item['id']]['caption'] = caption
+                with open(item['txt_path'], 'w', encoding='utf-8') as f:
+                    f.write(caption)
+                count += 1
+        msg = m.get("csv_imported", "✅ {count} caption(s) importée(s).").format(count=count)
+        gr.Info(msg)
+        return dataset, msg
+    except Exception as e:
+        return dataset, m.get("csv_import_error", "❌ Erreur CSV : {error}").format(error=e)
+
+def _parse_captions_md(path):
+    text = ""
+    with open(path, 'r', encoding='utf-8-sig', errors='replace') as f:
+        text = f.read()
+    pattern = re.compile(
+        r"(?ms)^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)\s*$"
+        r".*?^- Fichier:\s*(?P<file>.+?)\s*$"
+        r".*?^- Caption:\s*$"
+        r"\s*```(?:caption)?\s*\n(?P<caption>.*?)\n```"
+    )
+    rows = []
+    for match in pattern.finditer(text):
+        filename = (match.group("file") or "").strip()
+        caption = (match.group("caption") or "").strip()
+        if filename:
+            rows.append({"Fichier": filename, "Caption": caption})
+    return rows
+
+def import_captions_md(md_file, dataset, lang):
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if not md_file or not dataset:
+        msg = m.get("no_dataset", "No dataset.")
+        gr.Warning(msg)
+        return dataset, msg
+    try:
+        src = md_file if isinstance(md_file, str) else (md_file.name if hasattr(md_file, "name") else str(md_file))
+        rows = _parse_captions_md(src)
+        name_to_item = {item['img_name']: item for item in dataset}
+        count = 0
+        for row in rows:
+            filename = (row.get('Fichier') or '').strip()
+            caption = (row.get('Caption') or '').strip()
+            if filename in name_to_item and caption:
+                item = name_to_item[filename]
+                item['caption'] = caption
+                dataset[item['id']]['caption'] = caption
+                with open(item['txt_path'], 'w', encoding='utf-8') as f:
+                    f.write(caption)
+                count += 1
+        msg = f"✅ {count} caption(s) importée(s) depuis le MD." if lang == "FR" else f"✅ {count} caption(s) imported from MD."
+        gr.Info(msg)
+        return dataset, msg
+    except Exception as e:
+        msg = f"❌ Erreur import MD : {e}" if lang == "FR" else f"❌ MD import error: {e}"
+        return dataset, msg
+
+def import_captions_file(caption_file, dataset, lang):
+    src = caption_file if isinstance(caption_file, str) else (caption_file.name if hasattr(caption_file, "name") else str(caption_file or ""))
+    ext = os.path.splitext(src)[1].lower()
+    if ext == ".md":
+        return import_captions_md(caption_file, dataset, lang)
+    return import_captions_csv(caption_file, dataset, lang)
+
+# ==========================================
+# COPIER CAPTION VERS L'IMAGE SUIVANTE (Ctrl+D)
+# ==========================================
+
+def copy_caption_to_next(dataset, filtered_dataset, idx, current_caption, tracked_words, lang):
+    silent_save(dataset, filtered_dataset, idx, current_caption, lang)
+    if not filtered_dataset or idx < 0 or idx >= len(filtered_dataset):
+        return dataset, filtered_dataset, None, "", current_caption, update_word_count(current_caption, lang), idx, ""
+    next_idx = (idx + 1) % len(filtered_dataset)
+    next_item = filtered_dataset[next_idx]
+    real_id = next_item['id']
+    next_item['caption'] = current_caption
+    dataset[real_id]['caption'] = current_caption
+    with open(next_item['txt_path'], 'w', encoding='utf-8') as f:
+        f.write(current_caption)
+    res = update_viewer(filtered_dataset, next_idx, tracked_words, lang)
+    return (dataset, filtered_dataset) + res
 
 def render_lib_html(lib_state, lang):
     if not lib_state:
@@ -1628,6 +3939,7 @@ def add_to_lib_html(text, lib_state, lang):
     for item in items:
         if not any(x['text'] == item for x in new_lib) and item.lower() != "none":
             new_lib.append({"text": item, "selected": False})
+    save_library(new_lib)
     return render_lib_html(new_lib, lang), new_lib, ""
 
 def toggle_lib_item(idx_str, lib_state, lang):
@@ -1637,6 +3949,7 @@ def toggle_lib_item(idx_str, lib_state, lang):
         if 0 <= idx < len(new_lib):
             new_lib[idx]['selected'] = not new_lib[idx].get('selected', False)
     except: pass
+    save_library(new_lib)
     return render_lib_html(new_lib, lang), new_lib
 
 def delete_lib_item(idx_str, lib_state, lang):
@@ -1646,14 +3959,17 @@ def delete_lib_item(idx_str, lib_state, lang):
         if 0 <= idx < len(new_lib):
             new_lib.pop(idx)
     except: pass
+    save_library(new_lib)
     return render_lib_html(new_lib, lang), new_lib
 
 def uncheck_all_lib(lib_state, lang):
     new_lib = copy.deepcopy(lib_state)
     for x in new_lib: x['selected'] = False
+    save_library(new_lib)
     return render_lib_html(new_lib, lang), new_lib
 
 def clear_lib(lang):
+    save_library([])
     return render_lib_html([], lang), []
 
 def batch_library_cb(dataset, lib_state, mode, replace_target, selected_ids, search_text, current_idx, tracked_words, lang):
@@ -1734,7 +4050,7 @@ def batch_library_cb(dataset, lib_state, mode, replace_target, selected_ids, sea
     return new_dataset, filtered_dataset, history, msg, df_res, cap_disp, hl_disp, wc_disp, get_gallery_items(filtered_dataset, lang)
 
 # === TRADUCTION ===
-def translate_text(text, engine, source_lang, dest_lang, api_backend, api_url, llm_model, lang="FR", api_key=""):
+def translate_text(text, engine, source_lang, dest_lang, api_backend, api_url, llm_model, lang="FR", api_key="", timeout=180):
     m = MSG.get(lang, MSG["FR"])
     if not text: return ""
     if engine == "Google (Online)":
@@ -1759,14 +4075,14 @@ def translate_text(text, engine, source_lang, dest_lang, api_backend, api_url, l
         return call_ai_api(
             f"Translate the following text from {source_lang} to {dest_lang}. ONLY output the translation, nothing else.\nText: {text}",
             llm_model, None, api_backend, api_url, 0.3, 1024,
-            "You are a professional translator.", api_key=api_key
+            "You are a professional translator.", api_key=api_key, timeout=timeout
         )
 
-def do_live_translation(caption, engine, dest_lang, api_backend, api_url, llm_model, lang, api_key=""):
+def do_live_translation(caption, engine, dest_lang, api_backend, api_url, llm_model, lang, api_key="", timeout=180):
     if not caption: return ""
     caption = str(caption).strip()
     if len(caption) < 2: return ""
-    cache_key = (caption, engine, dest_lang, api_backend, api_url, llm_model, api_key)
+    cache_key = (caption, engine, dest_lang, api_backend, api_url, llm_model, api_key, _safe_timeout(timeout))
     if cache_key in LIVE_TRANSLATION_CACHE:
         return LIVE_TRANSLATION_CACHE[cache_key]
     try:
@@ -1778,7 +4094,7 @@ def do_live_translation(caption, engine, dest_lang, api_backend, api_url, llm_mo
             dst = lang_map.get(dest_lang, dest_lang.split(" ")[0]) if dest_lang else "en"
             res = GoogleTranslator(source="auto", target=dst).translate(caption)
         else:
-            res = translate_text(caption, engine, "auto", dest_lang, api_backend, api_url, llm_model, lang, api_key)
+            res = translate_text(caption, engine, "auto", dest_lang, api_backend, api_url, llm_model, lang, api_key, timeout)
         if res and res.startswith("⚠️"): return res
         if len(LIVE_TRANSLATION_CACHE) > 200:
             LIVE_TRANSLATION_CACHE.clear()
@@ -1787,7 +4103,38 @@ def do_live_translation(caption, engine, dest_lang, api_backend, api_url, llm_mo
     except Exception as e:
         return f"Erreur: {e}"
 
-def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, engine, source_lang, api_backend, api_url, llm_model, tracked_words, lang, api_key=""):
+def reverse_live_translation(translated_caption, engine, source_lang, api_backend, api_url, llm_model, tracked_words, lang, api_key="", timeout=180):
+    if not translated_caption:
+        return "", get_highlighted_html("", tracked_words), update_word_count("", lang)
+    translated_caption = str(translated_caption).strip()
+    if len(translated_caption) < 2:
+        return translated_caption, get_highlighted_html(translated_caption, tracked_words), update_word_count(translated_caption, lang)
+    cache_key = ("reverse", translated_caption, engine, source_lang or "auto", api_backend, api_url, llm_model, api_key, _safe_timeout(timeout))
+    if cache_key in LIVE_TRANSLATION_CACHE:
+        res = LIVE_TRANSLATION_CACHE[cache_key]
+    elif engine == "Google (Online)":
+        m = MSG.get(lang, MSG["FR"])
+        if not HAS_TRANSLATOR:
+            res = m.get("err_trans_no_install", "⚠️ Error: deep-translator is not installed.")
+        else:
+            try:
+                lang_map = {"auto": "auto", "fr": "fr", "es": "es", "de": "de", "it": "it", "pt": "pt", "ru": "ru", "ja": "ja", "ko": "ko", "zh-CN": "zh-CN", "en": "en"}
+                src = lang_map.get(source_lang, source_lang.split(" ")[0]) if source_lang else "auto"
+                res = GoogleTranslator(source=src, target="en").translate(translated_caption)
+            except Exception as e:
+                res = m.get("err_google_trans", "⚠️ Google Translate Error: {error}").format(error=str(e))
+    else:
+        res = translate_text(translated_caption, engine, source_lang or "auto", "en", api_backend, api_url, llm_model, lang, api_key, timeout)
+    if len(LIVE_TRANSLATION_CACHE) > 200:
+        LIVE_TRANSLATION_CACHE.clear()
+    LIVE_TRANSLATION_CACHE[cache_key] = res or ""
+    if res and not res.startswith("⚠️"):
+        return res, get_highlighted_html(res, tracked_words), update_word_count(res, lang)
+    if res and res.startswith("⚠️"):
+        gr.Warning(res)
+    return translated_caption, get_highlighted_html(translated_caption, tracked_words), update_word_count(translated_caption, lang)
+
+def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, engine, source_lang, api_backend, api_url, llm_model, tracked_words, lang, api_key="", timeout=180):
     new_dataset = copy.deepcopy(dataset)
     new_filtered = [item for item in new_dataset if item['id'] in [x['id'] for x in filtered_dataset]]
     m = MSG.get(lang, MSG["FR"])
@@ -1796,7 +4143,7 @@ def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, eng
         cap, hl_html, wc = get_updated_viewer_data(new_filtered, idx, tracked_words, lang)
         return new_dataset, new_filtered, cap, hl_html, wc, m.get("trans_no_text", "Aucun texte")
         
-    res = translate_text(caption, engine, source_lang, "en", api_backend, api_url, llm_model, lang, api_key)
+    res = translate_text(caption, engine, source_lang, "en", api_backend, api_url, llm_model, lang, api_key, timeout)
     
     if res and res.startswith("⚠️"):
         gr.Warning(res)
@@ -1821,9 +4168,9 @@ def translate_entire_caption_action(dataset, filtered_dataset, idx, caption, eng
     cap, hl_html, wc = get_updated_viewer_data(new_filtered, idx, tracked_words, lang)
     return new_dataset, new_filtered, cap, hl_html, wc, ""
 
-def trans_insert(text_to_trans, current_caption, engine, source_lang, api_backend, api_url, llm_model, lang, api_key=""):
+def trans_insert(text_to_trans, current_caption, engine, source_lang, api_backend, api_url, llm_model, lang, api_key="", timeout=180):
     if not text_to_trans: return current_caption
-    res = translate_text(text_to_trans, engine, source_lang, "en", api_backend, api_url, llm_model, lang, api_key)
+    res = translate_text(text_to_trans, engine, source_lang, "en", api_backend, api_url, llm_model, lang, api_key, timeout)
     if res and not res.startswith("⚠️"):
         sep = ", " if current_caption and not current_caption.endswith(", ") else ""
         return current_caption + sep + res
@@ -2082,7 +4429,7 @@ def simulate_and_clear_selection(dataset, export_dir, export_suffix, config_df, 
     status, gallery_preview, p_fig, b_fig = simulate_and_export(
         dataset, export_dir, export_suffix, config_df, True, [], strategy, max_images, lang
     )
-    return status, gallery_preview, p_fig, b_fig, [], MSG[lang].get("no_sel_all", "Aucune sélection (Le Batch impactera **TOUT** le dataset)."), "{}"
+    return status, gallery_preview, p_fig, b_fig, [], selection_summary_html(0, len(dataset or []), len(dataset or []), lang), "{}"
 
 def _caption_tags(caption):
     tags = []
@@ -2444,7 +4791,7 @@ def _parse_ai_recipe_tags(ai_text, allowed_tags, limit):
             break
     return result
 
-def auto_fill_recipe_from_ai(dataset, count, api_backend, api_url, llm_model, temp, ctx, sys_prompt, lang, api_key=""):
+def auto_fill_recipe_from_ai(dataset, count, api_backend, api_url, llm_model, temp, ctx, sys_prompt, lang, api_key="", timeout=180):
     m = MSG.get(lang, MSG.get("FR", {}))
     if not dataset:
         msg = m.get("no_dataset", "No dataset.")
@@ -2507,7 +4854,7 @@ def auto_fill_recipe_from_ai(dataset, count, api_backend, api_url, llm_model, te
     )
 
     ai_response = call_ai_api(
-        prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key
+        prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=timeout
     )
     allowed_tags = [tag for tag, _ in candidates]
     picked = []
@@ -2631,18 +4978,19 @@ def toggle_tracked_word(current_tracker, selected_text):
     if not found: existing.append(word) 
     return ", ".join(existing)
 
-def scan_duplicates_advanced(dataset, tolerance):
+def scan_duplicates_advanced(dataset, tolerance, algo="phash"):
     if not HAS_IMAGEHASH:
         gr.Warning("Installez imagehash: pip install imagehash")
-        return gr.update(choices=[], value=""), {}
+        return gr.update(choices=[], value=None), {}
     
     hashes = {}
     dups_pairs = []
+    hash_fn = getattr(imagehash, str(algo or "phash"), imagehash.phash)
     
     for item in dataset:
         try:
             img = Image.open(item['img_path'])
-            h = imagehash.average_hash(img)
+            h = hash_fn(img)
             
             found_dup = False
             for prev_h, prev_item in hashes.items():
@@ -2660,20 +5008,24 @@ def scan_duplicates_advanced(dataset, tolerance):
     
     if not dups_pairs:
         gr.Info("Aucun doublon visuel trouvé avec cette tolérance !")
-        return gr.update(choices=[], value=""), {}
+        return gr.update(choices=[], value=None), {}
         
     choices = [p["name"] for p in dups_pairs]
     mapping = {p["name"]: p for p in dups_pairs}
     gr.Warning(f"{len(choices)} paires suspectes trouvées !")
     return gr.update(choices=choices, value=choices[0]), mapping
 
-def load_duplicate_pair(pair_name, mapping):
-    if not pair_name or pair_name not in mapping: return None, None, -1, -1
+def load_duplicate_pair(pair_name, mapping, dataset, lang):
+    if not pair_name or pair_name not in mapping: return None, None, -1, -1, "", "", ""
     data = mapping[pair_name]
-    return data["imgA"], data["imgB"], data["idA"], data["idB"]
+    cap_a = next((x.get('caption', '') for x in dataset if x.get('id') == data["idA"]), "")
+    cap_b = next((x.get('caption', '') for x in dataset if x.get('id') == data["idB"]), "")
+    recommendation, _ = _duplicate_recommendation(pair_name, mapping, dataset, lang)
+    return data["imgA"], data["imgB"], data["idA"], data["idB"], cap_a, cap_b, recommendation
 
-def delete_duplicate(dataset, filtered_dataset, id_to_delete, pair_name, mapping):
-    if id_to_delete < 0: return dataset, filtered_dataset, gr.update(), mapping, "Erreur suppression"
+def delete_duplicate(dataset, filtered_dataset, id_to_delete, pair_name, mapping, lang):
+    if id_to_delete < 0:
+        return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), gr.update(), mapping, "Erreur suppression"
     item_to_del = next((x for x in dataset if x['id'] == id_to_delete), None)
     if item_to_del:
         try:
@@ -2681,16 +5033,120 @@ def delete_duplicate(dataset, filtered_dataset, id_to_delete, pair_name, mapping
             if os.path.exists(item_to_del['txt_path']): os.remove(item_to_del['txt_path'])
             dataset = [x for x in dataset if x['id'] != id_to_delete]
             filtered_dataset = [x for x in filtered_dataset if x['id'] != id_to_delete]
+            _reindex_dataset(dataset)
+            id_by_path = {item.get('img_path'): item.get('id') for item in dataset}
+            for item in filtered_dataset:
+                if item.get('img_path') in id_by_path:
+                    item['id'] = id_by_path[item.get('img_path')]
             gr.Info(f"Fichier {item_to_del['img_name']} supprimé.")
         except Exception as e:
             gr.Warning(f"Impossible de supprimer: {e}")
             
     if pair_name in mapping:
         del mapping[pair_name]
+    mapping = _refresh_duplicate_mapping_ids(mapping, dataset)
         
     choices = list(mapping.keys())
-    val = choices[0] if choices else ""
-    return dataset, filtered_dataset, gr.update(choices=choices, value=val), mapping, f"Supprimé. Reste {len(choices)} doublons."
+    val = choices[0] if choices else None
+    return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), gr.update(choices=choices, value=val), mapping, f"Supprimé. Reste {len(choices)} doublons."
+
+def skip_duplicate(pair_name, mapping):
+    if pair_name and pair_name in mapping:
+        del mapping[pair_name]
+    choices = list(mapping.keys()) if mapping else []
+    val = choices[0] if choices else None
+    return gr.update(choices=choices, value=val), mapping, f"Ignoré. Reste {len(choices)} doublons."
+
+def delete_all_duplicates_b(dataset, filtered_dataset, mapping, lang):
+    if not mapping:
+        return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), gr.update(choices=[], value=None), {}, "Aucun doublon à supprimer."
+    ids_to_delete = {data.get("idB") for data in mapping.values() if data.get("idB") is not None}
+    deleted = 0
+    errors = []
+    for item in list(dataset):
+        if item.get('id') not in ids_to_delete:
+            continue
+        try:
+            if os.path.exists(item['img_path']):
+                os.remove(item['img_path'])
+            if os.path.exists(item['txt_path']):
+                os.remove(item['txt_path'])
+            deleted += 1
+        except Exception as e:
+            errors.append(f"{item.get('img_name', '')}: {e}")
+    dataset = [x for x in dataset if x.get('id') not in ids_to_delete]
+    filtered_dataset = [x for x in filtered_dataset if x.get('id') not in ids_to_delete]
+    _reindex_dataset(dataset)
+    id_by_path = {item.get('img_path'): item.get('id') for item in dataset}
+    for item in filtered_dataset:
+        if item.get('img_path') in id_by_path:
+            item['id'] = id_by_path[item.get('img_path')]
+    msg = f"🗑️ {deleted} fichiers B supprimés."
+    if errors:
+        msg += f" ⚠️ {len(errors)} erreurs."
+    gr.Info(msg)
+    return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), gr.update(choices=[], value=None), {}, msg
+
+def _image_metrics(path):
+    metrics = {"pixels": 0, "size": 0, "dims": "?", "exists": False}
+    try:
+        if os.path.exists(path):
+            metrics["exists"] = True
+            metrics["size"] = os.path.getsize(path)
+        with Image.open(path) as img:
+            w, h = img.size
+            metrics["pixels"] = w * h
+            metrics["dims"] = f"{w}x{h}"
+    except Exception:
+        pass
+    return metrics
+
+def _duplicate_recommendation(pair_name, mapping, dataset, lang):
+    if not pair_name or pair_name not in (mapping or {}):
+        return "", None
+    data = mapping[pair_name]
+    item_a = next((x for x in dataset or [] if x.get('id') == data.get("idA")), None)
+    item_b = next((x for x in dataset or [] if x.get('id') == data.get("idB")), None)
+    if not item_a or not item_b:
+        return "", None
+
+    metrics_a = _image_metrics(item_a.get("img_path", ""))
+    metrics_b = _image_metrics(item_b.get("img_path", ""))
+    cap_a = len(str(item_a.get("caption", "")).strip())
+    cap_b = len(str(item_b.get("caption", "")).strip())
+    score_a = metrics_a["pixels"] + cap_a * 800 + metrics_a["size"] * 0.02
+    score_b = metrics_b["pixels"] + cap_b * 800 + metrics_b["size"] * 0.02
+    recommended_item = item_a if score_a < score_b else item_b
+    recommended_label = "A" if recommended_item is item_a else "B"
+    reasons = []
+    if metrics_a["pixels"] != metrics_b["pixels"]:
+        smaller = "A" if metrics_a["pixels"] < metrics_b["pixels"] else "B"
+        if smaller == recommended_label:
+            reasons.append("résolution plus basse" if lang == "FR" else "lower resolution")
+    if cap_a != cap_b:
+        shorter = "A" if cap_a < cap_b else "B"
+        if shorter == recommended_label:
+            reasons.append("caption plus courte" if lang == "FR" else "shorter caption")
+    if not reasons:
+        reasons.append("meilleur candidat à retirer" if lang == "FR" else "best removal candidate")
+    label = "Recommandé" if lang == "FR" else "Recommended"
+    action_word = "supprimer" if lang == "FR" else "delete"
+    txt = (
+        f"**{label}: {action_word} {recommended_label}** · "
+        f"A: {metrics_a['dims']} / {cap_a} chars · B: {metrics_b['dims']} / {cap_b} chars · "
+        f"{', '.join(reasons)}"
+    )
+    return txt, recommended_item.get("id")
+
+def describe_duplicate_recommendation(pair_name, mapping, dataset, lang):
+    txt, _ = _duplicate_recommendation(pair_name, mapping, dataset, lang)
+    return txt
+
+def delete_recommended_duplicate(dataset, filtered_dataset, pair_name, mapping, lang):
+    txt, recommended_id = _duplicate_recommendation(pair_name, mapping, dataset, lang)
+    if recommended_id is None:
+        return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), gr.update(), mapping, "Aucune recommandation disponible."
+    return delete_duplicate(dataset, filtered_dataset, recommended_id, pair_name, mapping, lang)
 
 def batch_rename_dataset(dataset, prefix):
     if not dataset or not prefix.strip(): return dataset, "Veuillez entrer un préfixe."
@@ -2714,57 +5170,384 @@ def batch_rename_dataset(dataset, prefix):
     gr.Info("Renommage par lot effectué !")
     return dataset, "✅ Dataset renommé."
 
-def batch_process_images(dataset, dest_folder, size, format_choice, crop_mode, handle_alpha):
+def _prep_format_info(format_choice):
+    fmt = str(format_choice or "WebP").strip().upper()
+    if fmt == "PNG":
+        return ".png", "PNG", {"optimize": True}
+    if fmt in ("JPEG", "JPG"):
+        return ".jpg", "JPEG", {"quality": 95, "optimize": True}
+    return ".webp", "WEBP", {"quality": 95}
+
+def _image_has_alpha(img):
+    return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+
+def _flatten_alpha_on_white(img):
+    if img.mode == "P":
+        img = img.convert("RGBA")
+    if img.mode in ("RGBA", "LA"):
+        alpha = img.getchannel("A") if img.mode == "RGBA" else img.getchannel(1)
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        bg.paste(img.convert("RGBA"), (0, 0), alpha)
+        return bg
+    return img.convert("RGB") if img.mode != "RGB" else img
+
+def _apply_batch_crop_mode(img, crop_mode):
+    if crop_mode == "Smart Face Crop (OpenCV)" and HAS_CV2:
+        img_cv = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        w, h = img.size
+        min_dim = min(w, h)
+        if len(faces) > 0:
+            x, y, w_face, h_face = faces[0]
+            center_x, center_y = x + w_face // 2, y + h_face // 2
+            left = max(0, center_x - min_dim // 2)
+            top = max(0, center_y - min_dim // 2)
+            right = min(w, left + min_dim)
+            bottom = min(h, top + min_dim)
+            if right - left < min_dim:
+                left = right - min_dim
+            if bottom - top < min_dim:
+                top = bottom - min_dim
+            return img.crop((left, top, right, bottom))
+        return img.crop(((w - min_dim) / 2, (h - min_dim) / 2, (w + min_dim) / 2, (h + min_dim) / 2))
+    if crop_mode == "1:1 (Carré Centre)":
+        w, h = img.size
+        min_dim = min(w, h)
+        return img.crop(((w - min_dim) / 2, (h - min_dim) / 2, (w + min_dim) / 2, (h + min_dim) / 2))
+    return img
+
+def _prepare_image_for_export(img, target_size, format_choice, crop_mode="Conserver Ratio", handle_alpha=True):
+    _, save_format, _ = _prep_format_info(format_choice)
+    img = img.copy()
+    img = _apply_batch_crop_mode(img, crop_mode)
+
+    if _image_has_alpha(img) and (handle_alpha or save_format == "JPEG"):
+        img = _flatten_alpha_on_white(img)
+    elif save_format in ("PNG", "WEBP") and _image_has_alpha(img):
+        img = img.convert("RGBA")
+    elif img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    img.thumbnail((int(target_size), int(target_size)), Image.Resampling.LANCZOS)
+    return img
+
+def _copy_caption_for_export(item, dest_folder):
+    txt_path = item.get("txt_path")
+    new_txt_name = os.path.splitext(item.get("img_name", "caption"))[0] + ".txt"
+    dest_txt = os.path.join(dest_folder, new_txt_name)
+    if txt_path and os.path.exists(txt_path):
+        shutil.copy2(txt_path, dest_txt)
+    else:
+        with open(dest_txt, "w", encoding="utf-8") as f:
+            f.write(str(item.get("caption", "")))
+    return dest_txt
+
+PREP_WORKFLOW_PRESETS = {
+    "Flux LoRA 1024 · WebP": {"size": "1024", "format": "WebP", "crop": "Conserver Ratio", "alpha": True},
+    "Flux carré 1024 · WebP": {"size": "1024", "format": "WebP", "crop": "1:1 (Carré Centre)", "alpha": True},
+    "PNG transparent 1024": {"size": "1024", "format": "PNG", "crop": "Conserver Ratio", "alpha": False},
+    "JPEG léger 768": {"size": "768", "format": "JPEG", "crop": "Conserver Ratio", "alpha": True},
+    "Portrait smart crop 1024": {"size": "1024", "format": "JPEG", "crop": "Smart Face Crop (OpenCV)", "alpha": True},
+}
+
+def _auto_prep_dest(items, size, format_choice):
+    dataset_dir = os.path.dirname(items[0].get('img_path', "")) if items else os.getcwd()
+    fmt = str(format_choice or "WebP").strip().lower().replace("jpeg", "jpg")
+    return os.path.join(dataset_dir, f"_processed_{size}_{fmt}")
+
+def apply_prep_workflow_preset(name):
+    preset = PREP_WORKFLOW_PRESETS.get(name or "")
+    if not preset:
+        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+    return (
+        gr.update(value=preset["size"]),
+        gr.update(value=preset["format"]),
+        gr.update(value=preset["crop"]),
+        gr.update(value=preset["alpha"]),
+        gr.update(value=""),
+    )
+
+def prep_workflow_summary(dataset, selected_ids, dest_folder, size, format_choice, crop_mode, handle_alpha, lang):
+    total = len(dataset or [])
+    selected = len(selected_ids or [])
+    target = selected if selected else total
+    auto_dest = _auto_prep_dest(dataset or [], size or "1024", format_choice or "WebP")
+    dest = str(dest_folder or "").strip() or auto_dest
+    scope = f"{target} image(s)"
+    if selected:
+        scope += " sélectionnée(s)" if lang == "FR" else " selected"
+    elif total:
+        scope += " du dataset" if lang == "FR" else " from dataset"
+    else:
+        scope = "aucun dataset" if lang == "FR" else "no dataset"
+    alpha_txt = "fond transparent aplati" if handle_alpha and lang == "FR" else "alpha flattened" if handle_alpha else "alpha conservé" if lang == "FR" else "alpha preserved"
+    title = "Résumé avant traitement" if lang == "FR" else "Processing summary"
+    return (
+        f"<div class='prep-summary-box'><strong>{title}</strong>"
+        f"<span>{scope}</span>"
+        f"<span>{size}px · {format_choice} · {crop_mode}</span>"
+        f"<span>{alpha_txt}</span>"
+        f"<span class='prep-summary-path'>{html.escape(dest)}</span></div>"
+    )
+
+def render_manual_cropper(lang):
+    if lang == "FR":
+        empty = "Chargez l'image courante pour commencer."
+        help_txt = "Cadre fixe: glissez l'image sous le cadre. Molette: zoom/dezoom. Libre: déplacez les coins du cadre. Raccourcis: ←/→ image precedente/suivante, ↑/↓ inverse portrait/paysage, Entree ecrase le crop et passe a l'image suivante."
+        load = "Charger l'image courante"
+        overwrite = "Écraser l'image courante"
+        ratios = [("free", "Libre"), ("1:1", "1:1"), ("4:5", "4:5"), ("3:4", "3:4"), ("16:9", "16:9")]
+    else:
+        empty = "Load the current image to begin."
+        help_txt = "Fixed frame: drag the image under the frame. Mouse wheel: zoom in/out. Free: drag frame corners. Shortcuts: Left/Right previous/next image, Up/Down flips portrait/landscape, Enter overwrites the crop and moves to the next image."
+        load = "Load current image"
+        overwrite = "Overwrite current image"
+        ratios = [("free", "Free"), ("1:1", "1:1"), ("4:5", "4:5"), ("3:4", "3:4"), ("16:9", "16:9")]
+    ratio_buttons = "".join(
+        f"<button type='button' class='manual-ratio-btn{' active' if value == '1:1' else ''}' data-ratio='{html.escape(value)}'>{html.escape(label)}</button>"
+        for value, label in ratios
+    )
+    return f"""
+<div id="manual_crop_canvas_tool" data-empty="{html.escape(empty, quote=True)}">
+  <div class="manual-crop-toolbar">
+    <button type="button" id="manual_crop_use_loaded">↙️ {html.escape(load)}</button>
+    {ratio_buttons}
+    <button type="button" id="manual_crop_overwrite" class="primary">💾 {html.escape(overwrite)}</button>
+    <span id="manual_crop_canvas_status" class="manual-crop-status">{html.escape(empty)}</span>
+  </div>
+  <div id="manual_crop_canvas_wrap">
+    <canvas id="manual_crop_canvas"></canvas>
+  </div>
+  <div class="manual-crop-help">{html.escape(help_txt)}</div>
+</div>
+"""
+
+def batch_process_images(dataset, selected_ids, dest_folder, size, format_choice, crop_mode, handle_alpha, progress=gr.Progress()):
     if not dataset: return "Aucun dataset."
-    if not dest_folder: dest_folder = os.path.join(os.getcwd(), "processed_dataset")
+    if not dest_folder: dest_folder = _auto_prep_dest(dataset, size, format_choice)
     os.makedirs(dest_folder, exist_ok=True)
     count = 0
     target_size = int(size)
-    for item in dataset:
+    selected_ids = set(selected_ids or [])
+    items_to_process = [item for item in dataset if not selected_ids or item.get('id') in selected_ids]
+    total = len(items_to_process)
+    ext, save_format, save_kwargs = _prep_format_info(format_choice)
+    for i, item in enumerate(items_to_process):
         try:
-            img = Image.open(item['img_path'])
-            if handle_alpha and (img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info)):
-                bg = Image.new('RGB', img.size, (255, 255, 255))
-                if img.mode == 'P': img = img.convert('RGBA')
-                bg.paste(img, (0,0), img)
-                img = bg
-            elif img.mode not in ('RGB', 'L'):
-                img = img.convert('RGB')
-                
-            if crop_mode == "Smart Face Crop (OpenCV)" and HAS_CV2:
-                img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-                face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-                faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-                if len(faces) > 0:
-                    x, y, w_face, h_face = faces[0]
-                    center_x, center_y = x + w_face//2, y + h_face//2
-                    w, h = img.size
-                    min_dim = min(w, h)
-                    left = max(0, center_x - min_dim//2)
-                    top = max(0, center_y - min_dim//2)
-                    right = min(w, left + min_dim)
-                    bottom = min(h, top + min_dim)
-                    if right - left < min_dim: left = right - min_dim
-                    if bottom - top < min_dim: top = bottom - min_dim
-                    img = img.crop((left, top, right, bottom))
-                else:
-                    w, h = img.size; min_dim = min(w, h)
-                    img = img.crop(((w-min_dim)/2, (h-min_dim)/2, (w+min_dim)/2, (h+min_dim)/2))
-            elif crop_mode == "1:1 (Carré Centre)":
-                w, h = img.size; min_dim = min(w, h)
-                img = img.crop(((w-min_dim)/2, (h-min_dim)/2, (w+min_dim)/2, (h+min_dim)/2))
-            
-            img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
-            ext = ".webp" if format_choice == "WebP" else ".jpg"
+            if progress:
+                progress((i + 1) / total if total else 1, desc=f"Traitement {i+1}/{total} : {item['img_name']}")
+            with Image.open(item['img_path']) as src_img:
+                img = _prepare_image_for_export(src_img, target_size, format_choice, crop_mode, handle_alpha)
             new_name = os.path.splitext(item['img_name'])[0] + ext
             save_path = os.path.join(dest_folder, new_name)
-            img.save(save_path, format="WEBP" if format_choice=="WebP" else "JPEG", quality=95)
-            new_txt_name = os.path.splitext(item['img_name'])[0] + ".txt"
-            shutil.copy2(item['txt_path'], os.path.join(dest_folder, new_txt_name))
+            img.save(save_path, format=save_format, **save_kwargs)
+            _copy_caption_for_export(item, dest_folder)
             count += 1
         except Exception as e: print(f"Erreur pré-traitement sur {item['img_name']}: {e}")
     return f"✅ {count} images traitées avec succès !"
+
+def _get_filtered_item(filtered_dataset, current_idx):
+    if not filtered_dataset:
+        return None, -1
+    try:
+        idx = int(current_idx)
+    except Exception:
+        idx = 0
+    idx = max(0, min(idx, len(filtered_dataset) - 1))
+    return filtered_dataset[idx], idx
+
+def _extract_editor_image(editor_value):
+    if editor_value is None:
+        return None
+    if isinstance(editor_value, Image.Image):
+        return editor_value.copy()
+    if isinstance(editor_value, str) and os.path.exists(editor_value):
+        return Image.open(editor_value)
+    if isinstance(editor_value, dict):
+        for key in ("composite", "image", "background"):
+            img = editor_value.get(key)
+            extracted = _extract_editor_image(img)
+            if extracted is not None:
+                return extracted
+    if "np" in globals() and hasattr(editor_value, "shape"):
+        return Image.fromarray(editor_value)
+    return None
+
+def load_manual_crop_image(filtered_dataset, current_idx, lang):
+    item, idx = _get_filtered_item(filtered_dataset, current_idx)
+    if not item:
+        msg = "Aucune image à charger." if lang == "FR" else "No image to load."
+        return gr.update(value=None), msg
+    msg = f"✂️ Image chargée pour crop manuel : {item.get('img_name', '')}"
+    if lang == "EN":
+        msg = f"✂️ Loaded for manual crop: {item.get('img_name', '')}"
+    return gr.update(value=item.get("img_path")), msg
+
+def save_manual_crop_image(editor_value, filtered_dataset, current_idx, dest_folder, size, format_choice, handle_alpha, lang):
+    item, idx = _get_filtered_item(filtered_dataset, current_idx)
+    if not item:
+        return "Aucune image sélectionnée." if lang == "FR" else "No selected image."
+    img = _extract_editor_image(editor_value)
+    if img is None:
+        return "Chargez ou recadrez une image avant de sauvegarder." if lang == "FR" else "Load or crop an image before saving."
+    if not dest_folder:
+        dest_folder = _auto_prep_dest(filtered_dataset or [], size, format_choice)
+    os.makedirs(dest_folder, exist_ok=True)
+    try:
+        ext, save_format, save_kwargs = _prep_format_info(format_choice)
+        processed = _prepare_image_for_export(img, int(size), format_choice, "Conserver Ratio", handle_alpha)
+        save_path = os.path.join(dest_folder, os.path.splitext(item.get("img_name", "image"))[0] + ext)
+        processed.save(save_path, format=save_format, **save_kwargs)
+        _copy_caption_for_export(item, dest_folder)
+        msg = f"✅ Crop sauvegardé : {os.path.basename(save_path)}"
+        return msg if lang == "FR" else f"✅ Crop saved: {os.path.basename(save_path)}"
+    except Exception as e:
+        return f"Erreur crop manuel : {e}" if lang == "FR" else f"Manual crop error: {e}"
+
+def save_manual_crop_and_next(editor_value, filtered_dataset, current_idx, dest_folder, size, format_choice, handle_alpha, tracked_words, lang):
+    status = save_manual_crop_image(editor_value, filtered_dataset, current_idx, dest_folder, size, format_choice, handle_alpha, lang)
+    if not filtered_dataset:
+        return gr.update(value=None), status, "", get_highlighted_html("", tracked_words), update_word_count("", lang), -1, ""
+    _, idx = _get_filtered_item(filtered_dataset, current_idx)
+    next_idx = min(idx + 1, len(filtered_dataset) - 1)
+    next_item = filtered_dataset[next_idx]
+    cap, hl, wc = get_updated_viewer_data(filtered_dataset, next_idx, tracked_words, lang)
+    viewer_status = f"Viewing: {next_item.get('img_name', '')}"
+    if lang == "FR":
+        viewer_status = f"Affichage : {next_item.get('img_name', '')}"
+    return gr.update(value=next_item.get("img_path")), status, next_item.get("img_path"), hl, cap, wc, next_idx, viewer_status
+
+def _save_image_over_original(img, path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".jpg", ".jpeg"):
+        img = img.convert("RGB")
+        img.save(path, format="JPEG", quality=95, optimize=False)
+    elif ext == ".webp":
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGB")
+        img.save(path, format="WEBP", quality=95, method=0)
+    elif ext == ".png":
+        img.save(path, format="PNG", optimize=False)
+    else:
+        img.convert("RGB").save(path)
+    try:
+        os.utime(path, None)
+    except Exception:
+        pass
+
+def overwrite_manual_crop_from_payload(payload, dataset, filtered_dataset, current_idx, tracked_words, lang):
+    item, idx = _get_filtered_item(filtered_dataset, current_idx)
+    if not item:
+        msg = "Aucune image sélectionnée." if lang == "FR" else "No selected image."
+        return dataset, filtered_dataset, gr.update(), "", get_highlighted_html("", tracked_words), "", update_word_count("", lang), -1, msg
+    try:
+        data = json.loads(payload or "{}")
+        go_next = bool(data.get("goNext"))
+        crop = data.get("crop", {})
+        x = float(crop.get("x", 0))
+        y = float(crop.get("y", 0))
+        w = float(crop.get("w", 0))
+        h = float(crop.get("h", 0))
+        if w < 2 or h < 2:
+            raise ValueError("crop trop petit")
+        img_path = item.get("img_path", "")
+        with Image.open(img_path) as img:
+            iw, ih = img.size
+            left = max(0, min(iw - 1, int(round(x))))
+            top = max(0, min(ih - 1, int(round(y))))
+            right = max(left + 1, min(iw, int(round(x + w))))
+            bottom = max(top + 1, min(ih, int(round(y + h))))
+            cropped = img.crop((left, top, right, bottom))
+            _save_image_over_original(cropped, img_path)
+        view_idx = min(idx + 1, len(filtered_dataset) - 1) if go_next else idx
+        view_item = filtered_dataset[view_idx] if filtered_dataset else item
+        cap, hl, wc = get_updated_viewer_data(filtered_dataset, view_idx, tracked_words, lang)
+        msg = f"✅ Image écrasée avec le crop : {item.get('img_name', '')}"
+        if lang == "EN":
+            msg = f"✅ Image overwritten with crop: {item.get('img_name', '')}"
+        gr.Info(msg)
+        return dataset, filtered_dataset, gr.update(), view_item.get("img_path", ""), hl, cap, wc, view_idx, msg
+    except Exception as e:
+        msg = f"Erreur écrasement crop : {e}" if lang == "FR" else f"Crop overwrite error: {e}"
+        gr.Warning(msg)
+        cap, hl, wc = get_updated_viewer_data(filtered_dataset, idx, tracked_words, lang)
+        return dataset, filtered_dataset, gr.update(), item.get("img_path", ""), hl, cap, wc, idx, msg
+
+def manual_crop_jump(filtered_dataset, current_idx, direction, tracked_words, lang):
+    if not filtered_dataset:
+        msg = "Aucune image à charger." if lang == "FR" else "No image to load."
+        return gr.update(value=None), "", get_highlighted_html("", tracked_words), "", update_word_count("", lang), -1, msg, msg
+    _, idx = _get_filtered_item(filtered_dataset, current_idx)
+    if direction == "prev":
+        next_idx = max(0, idx - 1)
+    else:
+        next_idx = min(len(filtered_dataset) - 1, idx + 1)
+    item = filtered_dataset[next_idx]
+    cap, hl, wc = get_updated_viewer_data(filtered_dataset, next_idx, tracked_words, lang)
+    viewer_status = f"Viewing: {item.get('img_name', '')}"
+    status = f"✂️ Loaded {next_idx + 1}/{len(filtered_dataset)}: {item.get('img_name', '')}"
+    if lang == "FR":
+        viewer_status = f"Affichage : {item.get('img_name', '')}"
+        status = f"✂️ Image {next_idx + 1}/{len(filtered_dataset)} chargée : {item.get('img_name', '')}"
+    return gr.update(value=item.get("img_path")), item.get("img_path"), hl, cap, wc, next_idx, viewer_status, status
+
+def update_prep_button_label(selected_ids, lang):
+    count = len(selected_ids or [])
+    if count:
+        label = f"Lancer sur la sélection ({count} images)" if lang == "FR" else f"Run on selection ({count} images)"
+    else:
+        label = UI_T.get(lang, UI_T.get("FR", {})).get("btn_prep", "Lancer le Traitement")
+    return gr.update(value=label)
+
+def detect_low_resolution_images(dataset, min_resolution, lang):
+    try:
+        threshold = int(float(min_resolution or 0))
+    except Exception:
+        threshold = 0
+    rows = []
+    if not dataset or threshold <= 0:
+        return pd.DataFrame(columns=["ID", "Image", "Largeur", "Hauteur", "Min"]), "Aucun seuil actif."
+    for item in dataset:
+        try:
+            with Image.open(item['img_path']) as img:
+                w, h = img.size
+            if min(w, h) < threshold:
+                rows.append({"ID": item.get('id'), "Image": item.get('img_name'), "Largeur": w, "Hauteur": h, "Min": min(w, h)})
+        except Exception:
+            pass
+    msg = f"🔍 {len(rows)} images sous {threshold}px."
+    return pd.DataFrame(rows, columns=["ID", "Image", "Largeur", "Hauteur", "Min"]), msg
+
+def move_low_resolution_images(dataset, filtered_dataset, min_resolution, lang):
+    df, status = detect_low_resolution_images(dataset, min_resolution, lang)
+    if df.empty:
+        return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), df, status, [], selection_summary_html(0, len(filtered_dataset or []), len(dataset or []), lang), "{}"
+    ids_to_move = set(int(x) for x in df["ID"].dropna().tolist())
+    dataset_dir = os.path.dirname(dataset[0]['img_path']) if dataset else os.getcwd()
+    dest_dir = os.path.join(dataset_dir, "_trop_petites")
+    os.makedirs(dest_dir, exist_ok=True)
+    moved = 0
+    for item in list(dataset):
+        if item.get('id') not in ids_to_move:
+            continue
+        try:
+            shutil.move(item['img_path'], os.path.join(dest_dir, item['img_name']))
+            if os.path.exists(item['txt_path']):
+                shutil.move(item['txt_path'], os.path.join(dest_dir, os.path.basename(item['txt_path'])))
+            moved += 1
+        except Exception as e:
+            print(f"Erreur déplacement basse résolution {item.get('img_name')}: {e}")
+    dataset = [x for x in dataset if x.get('id') not in ids_to_move]
+    filtered_dataset = [x for x in filtered_dataset if x.get('id') not in ids_to_move]
+    _reindex_dataset(dataset)
+    id_by_path = {item.get('img_path'): item.get('id') for item in dataset}
+    for item in filtered_dataset:
+        if item.get('img_path') in id_by_path:
+            item['id'] = id_by_path[item.get('img_path')]
+    msg = f"📦 {moved} images déplacées vers {dest_dir}"
+    return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), pd.DataFrame(), msg, [], selection_summary_html(0, len(filtered_dataset or []), len(dataset or []), lang), "{}"
 
 def update_advanced_stats(dataset):
     if not dataset: return None, None, "Aucun dataset", "Aucune contradiction"
@@ -2845,6 +5628,32 @@ def generate_civitai_format(df):
     gr.Info("✅ Format CivitAI généré ! Copiez le texte ci-dessous.")
     return md
 
+def export_stats_table(df, export_format, lang):
+    m = MSG.get(lang, MSG.get("FR", {}))
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        msg = m.get("no_stats_to_export", "No statistics to export.")
+        gr.Warning(msg)
+        return None, msg
+    export_dir = os.path.join(APP_DIR, "stats_exports")
+    os.makedirs(export_dir, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    if export_format == "csv":
+        path = os.path.join(export_dir, f"stats_{stamp}.csv")
+        df.to_csv(path, index=False, encoding="utf-8-sig")
+    else:
+        path = os.path.join(export_dir, f"stats_{stamp}.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(generate_civitai_format(df))
+    msg = m.get("stats_exported", "Statistics exported: {path}").format(path=path)
+    gr.Info(msg)
+    return path, msg
+
+def export_stats_csv(df, lang):
+    return export_stats_table(df, "csv", lang)
+
+def export_stats_md(df, lang):
+    return export_stats_table(df, "md", lang)
+
 # === Recettes / Tables Helpers (Pour l'Export) ===
 def df_to_tracked_words(df):
     if df is None or df.empty: return ""
@@ -2878,6 +5687,23 @@ def get_row_index(evt: gr.SelectData, state_json):
     try: tgt_val = float(tgt_val)
     except: tgt_val = 0.0
     return row_idx, prio_val, tgt_val
+
+def filter_gallery_from_stats_row(evt: gr.SelectData, stats_df, dataset, sort_order, lang):
+    if stats_df is None or not isinstance(stats_df, pd.DataFrame) or stats_df.empty:
+        return gr.update(), [], [], [], selection_summary_html(0, 0, len(dataset or []), lang), "{}", -1
+    try:
+        row_idx = evt.index[0] if isinstance(evt.index, (list, tuple)) else evt.index
+        row_idx = int(row_idx)
+    except Exception:
+        row_idx = -1
+    if row_idx < 0 or row_idx >= len(stats_df):
+        return gr.update(), [], [], [], selection_summary_html(0, 0, len(dataset or []), lang), "{}", -1
+    kw_col = "Mot-clé" if "Mot-clé" in stats_df.columns else "Keyword"
+    keyword = str(stats_df.iloc[row_idx].get(kw_col, "")).strip()
+    if not keyword or keyword.lower() in ("aucun", "none"):
+        return gr.update(), [], [], [], selection_summary_html(0, 0, len(dataset or []), lang), "{}", -1
+    filtered, gal_items, selected, summary, sync_payload, current_idx = filter_gallery(dataset, keyword, sort_order, lang)
+    return gr.update(value=keyword), filtered, gal_items, selected, summary, sync_payload, current_idx
 
 def apply_quick_prio(new_prio, row_idx, state_json):
     if row_idx < 0 or not state_json or state_json == "{}": return gr.update(), state_json, gr.update(), row_idx
@@ -3026,20 +5852,92 @@ def handle_drag_and_drop(dnd_data, current_df):
     except Exception:
         return current_df, current_df.to_json(orient='records'), gr.update()
 
+AI_FORMAT_PRESETS = {
+    "Personnalisé": {},
+    "Booru (virgules)": {
+        "action": "Tag Sorting & Standardisation",
+        "prompt": "",
+        "injection": "Remplacer tout",
+        "vision": False,
+    },
+    "Flux phrase naturelle": {
+        "action": "Traducteur Visuel (Booru ↔ Phrase Naturelle)",
+        "prompt": "",
+        "injection": "Remplacer tout",
+        "vision": False,
+    },
+    "Minimal (trigger + 5 tags)": {
+        "action": "✨ Prompt Personnalisé (Texte/Vision)",
+        "prompt": "À partir de ces tags: {tags}\nRenvoie uniquement le trigger principal puis 5 tags essentiels, séparés par des virgules. Pas de phrase.",
+        "injection": "Remplacer tout",
+        "vision": False,
+    },
+}
+
+def load_ai_format_presets():
+    recipes = load_ai_recipes()
+    custom = recipes.get("__format_presets__", {}) if isinstance(recipes, dict) else {}
+    presets = copy.deepcopy(AI_FORMAT_PRESETS)
+    if isinstance(custom, dict):
+        for name, data in custom.items():
+            if isinstance(data, dict):
+                presets[name] = data
+    return presets
+
+def apply_ai_format_preset(name):
+    presets = load_ai_format_presets()
+    data = presets.get(name or "Personnalisé", {})
+    if not data:
+        return gr.update(), gr.update(), gr.update(), gr.update()
+    return (
+        gr.update(value=data.get("action", "Auto-Taggage / Super OCR (VLM)")),
+        gr.update(value=data.get("prompt", "")),
+        gr.update(value=data.get("injection", "Remplacer tout")),
+        gr.update(value=bool(data.get("vision", False))),
+    )
+
 def load_ai_recipes():
     if os.path.exists(AI_RECIPES_FILE):
         with open(AI_RECIPES_FILE, 'r') as f: return json.load(f)
     return {"Default Flux Style": "Réécris ces tags en une phrase naturelle parfaite pour le modèle Flux : {tags}"}
 
+def load_ai_template_choices():
+    recipes = load_ai_recipes()
+    if not isinstance(recipes, dict):
+        return []
+    return [name for name, prompt in recipes.items() if not str(name).startswith("__") and isinstance(prompt, str)]
+
 def save_ai_recipe(name, prompt):
     if not name: return gr.update()
     recipes = load_ai_recipes()
     recipes[name] = prompt
-    with open(AI_RECIPES_FILE, 'w') as f: json.dump(recipes, f)
+    with open(AI_RECIPES_FILE, 'w', encoding="utf-8") as f: json.dump(recipes, f, ensure_ascii=False, indent=2)
     gr.Info("Template IA sauvegardé !")
-    return gr.update(choices=list(recipes.keys()), value=name)
+    return gr.update(choices=load_ai_template_choices(), value=name)
 
-def apply_ai_recipe(name): return load_ai_recipes().get(name, "")
+def apply_ai_recipe(name):
+    prompt = load_ai_recipes().get(name, "")
+    return prompt if isinstance(prompt, str) else ""
+
+BUILTIN_AI_ACTIONS = [
+    "Auto-Taggage / Super OCR (VLM)",
+    "Reality Check & Hallucinations (VLM)",
+    "Concept Isolator (Spécial LoRA)",
+    "Traducteur Visuel (Booru ↔ Phrase Naturelle)",
+    "Tag Sorting & Standardisation",
+    "Traduction Batch (Vers Anglais)",
+    "✨ Prompt Personnalisé (Texte/Vision)",
+]
+
+AI_ACTION_PROMPTS = {
+    "Auto-Taggage / Super OCR (VLM)": "Décris cette image en détail (virgules). Ajoute le texte lu sous la forme text: \"le texte\".",
+    "Reality Check & Hallucinations (VLM)": "Tags actuels: '{tags}'. Ne renvoie QUE les tags réellement présents.",
+    "Concept Isolator (Spécial LoRA)": "Décris l'arrière-plan et le style, NE DÉCRIS PAS le sujet principal.",
+    "Traducteur Visuel (Booru ↔ Phrase Naturelle)": "Transforme en phrase anglaise fluide pour Flux : {tags}",
+    "Tag Sorting & Standardisation": "Ordonne (Sujet, Vêtements, Fond) et corrige: {tags}",
+    "Traduction Batch (Vers Anglais)": "Translate into English, keep comma format: {tags}",
+    "✨ Prompt Personnalisé (Texte/Vision)": "{tags}",
+}
 
 AI_ACTION_DESCRIPTIONS = {
     "Auto-Taggage / Super OCR (VLM)": "**Vision :** Analyse complète de l'image et extraction du texte.",
@@ -3047,14 +5945,150 @@ AI_ACTION_DESCRIPTIONS = {
     "Concept Isolator (Spécial LoRA)": "**Vision :** Décrit tout SAUF le sujet central.",
     "Traducteur Visuel (Booru ↔ Phrase Naturelle)": "**Texte :** Convertit des tags bruts en une belle phrase.",
     "Tag Sorting & Standardisation": "**Texte :** Ordonne l'importance des tags et corrige l'orthographe.",
-    "Traduction Automatique (Vers Anglais)": "**Texte :** Traduit proprement vers l'anglais.",
+    "Traduction Batch (Vers Anglais)": "**Texte batch :** traduit les captions ciblées vers l'anglais. Pour traduire seulement l'image courante, utilisez le module Traduction du viewer.",
+    "Traduction Automatique (Vers Anglais)": "**Texte batch :** traduit les captions ciblées vers l'anglais. Pour traduire seulement l'image courante, utilisez le module Traduction du viewer.",
     "✨ Prompt Personnalisé (Texte/Vision)": "**Custom :** Utilisez le champ 'Prompt Personnalisé' ci-dessous."
 }
 
+def load_custom_ai_actions():
+    recipes = load_ai_recipes()
+    custom = recipes.get("__custom_actions__", {}) if isinstance(recipes, dict) else {}
+    if not isinstance(custom, dict):
+        return {}
+    clean = {}
+    for name, data in custom.items():
+        if isinstance(name, str) and isinstance(data, dict) and str(data.get("prompt", "")).strip():
+            clean[name] = data
+    return clean
+
+def save_custom_ai_actions(actions):
+    recipes = load_ai_recipes()
+    if not isinstance(recipes, dict):
+        recipes = {}
+    recipes["__custom_actions__"] = actions
+    with open(AI_RECIPES_FILE, "w", encoding="utf-8") as f:
+        json.dump(recipes, f, ensure_ascii=False, indent=2)
+
+def load_ai_action_choices():
+    choices = list(BUILTIN_AI_ACTIONS)
+    for name in sorted(load_custom_ai_actions().keys(), key=lambda x: x.lower()):
+        if name not in choices:
+            choices.append(name)
+    return choices
+
+def _action_uses_vision(action):
+    if action in load_custom_ai_actions():
+        return bool(load_custom_ai_actions()[action].get("vision", False))
+    return action in (
+        "Auto-Taggage / Super OCR (VLM)",
+        "Reality Check & Hallucinations (VLM)",
+        "Concept Isolator (Spécial LoRA)",
+    )
+
+def _render_action_prompt(template, caption, item):
+    return str(template or "").replace("{tags}", str(caption or "")).replace("{caption}", str(caption or "")).replace("{filename}", str(item.get("img_name", "")))
+
 def update_ai_action_desc(action):
     show_custom = action == "✨ Prompt Personnalisé (Texte/Vision)"
+    custom = load_custom_ai_actions().get(action)
+    desc = custom.get("description", "") if custom else AI_ACTION_DESCRIPTIONS.get(action, "")
+    if custom:
+        desc = f"**Action personnalisée :** {desc or 'Prompt JSON éditable.'}"
+    return f"<div class='ai-desc-box'>ℹ️ {desc}</div>", gr.update(visible=show_custom), gr.update(visible=True)
+
+def load_ai_action_for_edit(action):
+    custom = load_custom_ai_actions().get(action)
+    if custom:
+        return (
+            action,
+            custom.get("prompt", ""),
+            custom.get("description", ""),
+            bool(custom.get("vision", False)),
+            custom.get("injection", "Remplacer tout"),
+            "Action personnalisée chargée. Sauver mettra à jour cette action.",
+        )
+    prompt = AI_ACTION_PROMPTS.get(action, "{tags}")
     desc = AI_ACTION_DESCRIPTIONS.get(action, "")
-    return f"<div class='ai-desc-box'>ℹ️ {desc}</div>", gr.update(visible=show_custom), gr.update(visible=show_custom)
+    return (
+        action or "",
+        prompt,
+        desc.replace("**Vision :** ", "").replace("**Texte :** ", "").replace("**Texte batch :** ", "").replace("**Custom :** ", ""),
+        _action_uses_vision(action),
+        "Remplacer tout",
+        "Action native chargée. Sauver créera une surcharge personnalisée modifiable.",
+    )
+
+def save_custom_ai_action(name, prompt, description, vision, injection):
+    name = str(name or "").strip()
+    prompt = str(prompt or "").strip()
+    if not name or not prompt:
+        return gr.update(choices=load_ai_action_choices()), "Nom et prompt requis."
+    actions = load_custom_ai_actions()
+    actions[name] = {
+        "prompt": prompt,
+        "description": str(description or "").strip(),
+        "vision": bool(vision),
+        "injection": injection or "Remplacer tout",
+    }
+    save_custom_ai_actions(actions)
+    gr.Info(f"Action IA sauvegardée : {name}")
+    return gr.update(choices=load_ai_action_choices(), value=name), f"✅ Action sauvegardée : {name}"
+
+def delete_custom_ai_action(name):
+    name = str(name or "").strip()
+    actions = load_custom_ai_actions()
+    if name not in actions:
+        return gr.update(choices=load_ai_action_choices()), "Cette action est native ou inexistante : rien à supprimer."
+    del actions[name]
+    save_custom_ai_actions(actions)
+    gr.Info(f"Action IA supprimée : {name}")
+    return gr.update(choices=load_ai_action_choices(), value="Auto-Taggage / Super OCR (VLM)"), f"🗑️ Action supprimée : {name}"
+
+def export_ai_actions_json():
+    export_dir = os.path.join(APP_DIR, "stats_exports")
+    os.makedirs(export_dir, exist_ok=True)
+    path = os.path.join(export_dir, f"ai_actions_{time.strftime('%Y%m%d_%H%M%S')}.json")
+    payload = {
+        "app": APP_TITLE,
+        "version": APP_VERSION,
+        "actions": load_custom_ai_actions(),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return path, f"✅ Export JSON : {path}"
+
+def import_ai_actions_json(file_path):
+    if isinstance(file_path, dict):
+        file_path = file_path.get("name") or file_path.get("path")
+    if not file_path or not os.path.exists(file_path):
+        return gr.update(choices=load_ai_action_choices()), "Aucun fichier JSON valide."
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        incoming = data.get("actions") or data.get("__custom_actions__") or data
+        if not isinstance(incoming, dict):
+            return gr.update(choices=load_ai_action_choices()), "Format JSON non reconnu."
+        actions = load_custom_ai_actions()
+        imported = 0
+        for name, config in incoming.items():
+            if not isinstance(config, dict):
+                continue
+            prompt = str(config.get("prompt", "")).strip()
+            if not name or not prompt:
+                continue
+            actions[str(name).strip()] = {
+                "prompt": prompt,
+                "description": str(config.get("description", "")).strip(),
+                "vision": bool(config.get("vision", False)),
+                "injection": config.get("injection", "Remplacer tout"),
+            }
+            imported += 1
+        save_custom_ai_actions(actions)
+        msg = f"✅ {imported} actions importées."
+        gr.Info(msg)
+        return gr.update(choices=load_ai_action_choices()), msg
+    except Exception as e:
+        return gr.update(choices=load_ai_action_choices()), f"Erreur import JSON : {e}"
 
 def _normalize_api_url(api_url, default):
     """Nettoie une URL d'API. Préfixe http:// si manquant, supprime trailing slash."""
@@ -3092,6 +6126,25 @@ def _safe_output_tokens(ctx, default=1024, hard_cap=2048):
         value = default
     return max(64, min(value, hard_cap))
 
+def _safe_context_tokens(ctx, default=4096):
+    try:
+        value = int(float(ctx))
+    except Exception:
+        value = default
+    return max(1024, value if value > 0 else default)
+
+def estimate_text_tokens(text):
+    text = str(text or "")
+    if not text:
+        return 0
+    if HAS_TIKTOKEN:
+        try:
+            return len(_TIKTOKEN_ENC.encode(text))
+        except Exception:
+            pass
+    # Conservative multilingual fallback close enough for prompt budgeting.
+    return max(1, int(len(text) / 3.6))
+
 def _format_http_error(prefix, response, exc):
     detail = ""
     try:
@@ -3103,11 +6156,12 @@ def _format_http_error(prefix, response, exc):
         return f"{prefix}: {exc} | Réponse serveur: {detail}"
     return f"{prefix}: {exc}"
 
-def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_prompt, api_key=""):
+def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_prompt, api_key="", timeout=180):
     """Appelle un backend IA. Supporte Ollama, OpenAI-compatible (LM Studio inclus),
     Anthropic Claude et Google Gemini. api_key est requis pour les services cloud."""
     kind = _backend_kind(api_backend)
     api_key = (api_key or "").strip()
+    timeout = _safe_timeout(timeout)
     b64 = None
     if image_path:
         with open(image_path, "rb") as f:
@@ -3125,7 +6179,7 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
         if b64:
             payload["images"] = [b64]
         try:
-            response = requests.post(url, json=payload, timeout=180)
+            response = requests.post(url, json=payload, timeout=timeout)
             response.raise_for_status()
             return response.json().get("response", "").strip()
         except Exception as e:
@@ -3156,7 +6210,7 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
             "content-type": "application/json",
         }
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=180)
+            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
             response.raise_for_status()
             data = response.json()
             blocks = data.get("content", [])
@@ -3184,7 +6238,7 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
         if sys_prompt:
             payload["systemInstruction"] = {"parts": [{"text": str(sys_prompt).strip()}]}
         try:
-            response = requests.post(endpoint, json=payload, timeout=180)
+            response = requests.post(endpoint, json=payload, timeout=timeout)
             response.raise_for_status()
             data = response.json()
             candidates = data.get("candidates", [])
@@ -3221,7 +6275,7 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=180)
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     except requests.HTTPError as e:
@@ -3229,29 +6283,54 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
     except Exception as e:
         return f"Erreur API OpenAI-compatible: {e}"
 
-def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url, temp, ctx, sys_prompt, current_idx, tracked_words, lang, api_key=""):
+def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url, temp, ctx, sys_prompt, current_idx, tracked_words, lang, api_key="", api_timeout=180, progress=gr.Progress()):
     if not dataset: return dataset, dataset, dataset, "Dataset vide.", extract_all_tags(dataset), "", get_highlighted_html("", tracked_words), ""
     history = copy.deepcopy(dataset)
     count = 0; errors = []
-    for item in dataset:
-        if selected_ids and item['id'] not in selected_ids: continue
-        current_cap = item['caption']; new_cap = current_cap; res = ""
+    selected_ids = set(selected_ids or [])
+    items_to_process = [item for item in dataset if not selected_ids or item.get('id') in selected_ids]
+    total = len(items_to_process)
+    custom_actions = load_custom_ai_actions()
+    for i, item in enumerate(items_to_process):
+        if progress:
+            progress((i + 1) / total if total else 1, desc=f"IA {i+1}/{total} : {item['img_name']}")
+        current_cap = item['caption']; new_cap = current_cap; res = ""; effective_injection = injection_mode
         try:
-            if action == "Auto-Taggage / Super OCR (VLM)": res = call_ai_api("Décris cette image en détail (virgules). Ajoute le texte lu sous la forme text: \"le texte\".", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
-            elif action == "Reality Check & Hallucinations (VLM)": res = call_ai_api(f"Tags actuels: '{current_cap}'. Ne renvoie QUE les tags réellement présents.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
-            elif action == "Concept Isolator (Spécial LoRA)": res = call_ai_api("Décris l'arrière-plan et le style, NE DÉCRIS PAS le sujet principal.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
-            elif action == "Traducteur Visuel (Booru ↔ Phrase Naturelle)": res = call_ai_api(f"Transforme en phrase anglaise fluide pour Flux : {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
-            elif action == "Traduction Automatique (Vers Anglais)": res = call_ai_api(f"Translate into English, keep comma format: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
-            elif action == "Tag Sorting & Standardisation": res = call_ai_api(f"Ordonne (Sujet, Vêtements, Fond) et corrige: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+            if action in custom_actions:
+                custom_action = custom_actions[action]
+                model_to_use = vlm_model if bool(custom_action.get("vision", False)) else llm_model
+                img_path_to_use = item['img_path'] if bool(custom_action.get("vision", False)) else None
+                effective_injection = custom_action.get("injection") or injection_mode
+                res = call_ai_api(
+                    _render_action_prompt(custom_action.get("prompt", ""), current_cap, item),
+                    model_to_use,
+                    img_path_to_use,
+                    api_backend,
+                    api_url,
+                    temp,
+                    ctx,
+                    sys_prompt,
+                    api_key=api_key,
+                    timeout=api_timeout,
+                )
+            elif action == "Auto-Taggage / Super OCR (VLM)": res = call_ai_api("Décris cette image en détail (virgules). Ajoute le texte lu sous la forme text: \"le texte\".", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+            elif action == "Reality Check & Hallucinations (VLM)": res = call_ai_api(f"Tags actuels: '{current_cap}'. Ne renvoie QUE les tags réellement présents.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+            elif action == "Concept Isolator (Spécial LoRA)": res = call_ai_api("Décris l'arrière-plan et le style, NE DÉCRIS PAS le sujet principal.", vlm_model, item['img_path'], api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+            elif action == "Traducteur Visuel (Booru ↔ Phrase Naturelle)": res = call_ai_api(f"Transforme en phrase anglaise fluide pour Flux : {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+            elif action in ("Traduction Batch (Vers Anglais)", "Traduction Automatique (Vers Anglais)"): res = call_ai_api(f"Translate into English, keep comma format: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+            elif action == "Tag Sorting & Standardisation": res = call_ai_api(f"Ordonne (Sujet, Vêtements, Fond) et corrige: {current_cap}", llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
             elif action == "✨ Prompt Personnalisé (Texte/Vision)":
                 model_to_use = vlm_model if use_vision_for_custom else llm_model
                 img_path_to_use = item['img_path'] if use_vision_for_custom else None
-                res = call_ai_api(custom_prompt.replace("{tags}", current_cap), model_to_use, img_path_to_use, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+                res = call_ai_api(custom_prompt.replace("{tags}", current_cap), model_to_use, img_path_to_use, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
             
             if res.startswith("Erreur API"): errors.append(item['img_name']); gr.Warning(res); continue
-            if injection_mode == "Remplacer tout" or action != "✨ Prompt Personnalisé (Texte/Vision)": new_cap = res
-            elif injection_mode == "Ajouter au début": new_cap = res + ", " + current_cap if current_cap else res
-            elif injection_mode == "Ajouter à la fin": new_cap = current_cap + ", " + res if current_cap else res
+            if effective_injection in ("Remplacer tout", "Replace all") or not effective_injection:
+                new_cap = res
+            elif effective_injection in ("Ajouter au début", "Add at start"):
+                new_cap = res + ", " + current_cap if current_cap else res
+            elif effective_injection in ("Ajouter à la fin", "Add at end"):
+                new_cap = current_cap + ", " + res if current_cap else res
             
             if new_cap != current_cap: item['caption'] = new_cap; count += 1
         except: errors.append(item['img_name'])
@@ -3263,6 +6342,22 @@ def process_ai_action(dataset, selected_ids, search_text, action, custom_prompt,
     
     cap, hl, wc = get_updated_viewer_data(filtered_dataset, current_idx, tracked_words, lang)
     return dataset, filtered_dataset, history, msg, extract_all_tags(dataset), cap, hl, wc
+
+def process_ai_current_image(dataset, filtered_dataset, search_text, action, custom_prompt, injection_mode, use_vision_for_custom, vlm_model, llm_model, api_backend, api_url, temp, ctx, sys_prompt, current_idx, tracked_words, lang, api_key="", api_timeout=180):
+    if not filtered_dataset or current_idx < 0 or current_idx >= len(filtered_dataset):
+        return dataset, filtered_dataset, dataset, MSG[lang].get("no_img_sel", "No image selected."), extract_all_tags(dataset), "", get_highlighted_html("", tracked_words), update_word_count("", lang)
+    current_id = filtered_dataset[current_idx].get('id')
+    return process_ai_action(
+        dataset, [current_id], search_text, action, custom_prompt, injection_mode,
+        use_vision_for_custom, vlm_model, llm_model, api_backend, api_url, temp,
+        ctx, sys_prompt, current_idx, tracked_words, lang, api_key, api_timeout,
+    )
+
+def select_images_without_caption(dataset, filtered_dataset, lang):
+    selected_visual = [i for i, item in enumerate(filtered_dataset or []) if not str(item.get('caption', '')).strip()]
+    selected_ids = [filtered_dataset[i].get('id') for i in selected_visual]
+    payload = "__SET_SELECTION__" + json.dumps({"selected": selected_visual, "viewIndex": selected_visual[0] if selected_visual else 0})
+    return selected_ids, selection_summary_html(len(selected_ids), len(filtered_dataset or []), len(dataset or []), lang), payload
 
 def _split_caption_tags(caption):
     return [tag.strip() for tag in str(caption or "").split(",") if tag.strip()]
@@ -3293,17 +6388,16 @@ def _build_bias_profile(dataset, sample_size=30):
         "caption_samples": samples,
     }
 
-def analyze_bias(dataset, llm_model, api_backend, api_url, temp, ctx, sys_prompt, lang="FR", api_key=""):
-    if not dataset:
-        return MSG.get(lang, MSG.get("FR", {})).get("no_dataset", "Aucun dataset.")
-    profile = _build_bias_profile(dataset)
-    output_lang = "français" if lang == "FR" else "English"
-    top_tags = ", ".join([f"{tag} ({count})" for tag, count in profile["top_tags"][:30]])
-    rare_tags = ", ".join([tag for tag, _ in profile["rare_tags"][:25]])
-    caption_samples = "\n".join([f"- {cap[:260]}" for cap in profile["caption_samples"]])
-    prompt = f"""
+def _build_bias_prompt(profile, output_lang, top_limit=30, rare_limit=25, sample_limit=30, sample_chars=260, compact_note=False):
+    top_tags = ", ".join([f"{tag} ({count})" for tag, count in profile["top_tags"][:top_limit]])
+    rare_tags = ", ".join([tag for tag, _ in profile["rare_tags"][:rare_limit]])
+    caption_samples = "\n".join([f"- {cap[:sample_chars]}" for cap in profile["caption_samples"][:sample_limit]])
+    compact_line = ""
+    if compact_note:
+        compact_line = "\nNote: le profil fourni est compacté automatiquement pour respecter la fenêtre de contexte du modèle local."
+    return f"""
 Tu es un expert senior en préparation de datasets pour Stable Diffusion, Flux et entraînement LoRA.
-Analyse ce dataset à partir de ses captions réelles. Réponds en {output_lang}, de façon concrète et actionnable.
+Analyse ce dataset à partir de ses captions réelles. Réponds en {output_lang}, de façon concrète et actionnable.{compact_line}
 
 Résumé quantitatif:
 - Images: {profile['total_images']}
@@ -3319,7 +6413,7 @@ Tags rares ou potentiellement isolés:
 {rare_tags or "Aucun"}
 
 Échantillon représentatif des captions:
-{caption_samples}
+{caption_samples or "Aucun"}
 
 Produit un rapport structuré avec ces sections:
 1. Diagnostic rapide: ce que le dataset semble apprendre en priorité.
@@ -3330,12 +6424,95 @@ Produit un rapport structuré avec ces sections:
 
 Ne reste pas générique: appuie chaque remarque sur les tags ou captions fournis. Si une information manque, indique comment la vérifier dans l'outil.
 """.strip()
-    return call_ai_api(prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key)
+
+def _build_context_safe_bias_prompt(profile, output_lang, ctx, sys_prompt=""):
+    ctx_tokens = _safe_context_tokens(ctx)
+    output_budget = _safe_output_tokens(ctx)
+    system_tokens = estimate_text_tokens(sys_prompt)
+    # Leave room for chat formatting, system prompt and the model response.
+    input_budget = max(700, min(2600, ctx_tokens - output_budget - system_tokens - 420))
+    variants = [
+        (30, 25, 30, 260),
+        (24, 18, 12, 180),
+        (18, 12, 8, 150),
+        (14, 8, 5, 120),
+        (10, 5, 3, 90),
+        (8, 0, 2, 70),
+    ]
+    chosen = None
+    compacted = False
+    for i, (top_limit, rare_limit, sample_limit, sample_chars) in enumerate(variants):
+        prompt = _build_bias_prompt(
+            profile,
+            output_lang,
+            top_limit=top_limit,
+            rare_limit=rare_limit,
+            sample_limit=sample_limit,
+            sample_chars=sample_chars,
+            compact_note=i > 0,
+        )
+        chosen = prompt
+        compacted = i > 0
+        if estimate_text_tokens(prompt) <= input_budget:
+            return prompt, compacted
+    return chosen, compacted
+
+def _is_context_overflow_error(text):
+    low = str(text or "").lower()
+    return any(marker in low for marker in ("n_keep", "context length", "context_length", "prompt is too long", "too many tokens"))
+
+def analyze_bias(dataset, llm_model, api_backend, api_url, temp, ctx, sys_prompt, lang="FR", api_key="", api_timeout=180):
+    if not dataset:
+        return MSG.get(lang, MSG.get("FR", {})).get("no_dataset", "Aucun dataset.")
+    profile = _build_bias_profile(dataset)
+    output_lang = "français" if lang == "FR" else "English"
+    prompt, compacted = _build_context_safe_bias_prompt(profile, output_lang, ctx, sys_prompt)
+    result = call_ai_api(prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+    if _is_context_overflow_error(result):
+        fallback_prompt = _build_bias_prompt(profile, output_lang, top_limit=8, rare_limit=0, sample_limit=1, sample_chars=50, compact_note=True)
+        result = call_ai_api(fallback_prompt, llm_model, None, api_backend, api_url, temp, ctx, sys_prompt, api_key=api_key, timeout=api_timeout)
+        compacted = True
+    if compacted and result and not str(result).startswith("Erreur API"):
+        note = "Note: rapport généré avec un profil compacté pour respecter le contexte du modèle local.\n\n"
+        if lang == "EN":
+            note = "Note: report generated with a compacted profile to fit the local model context.\n\n"
+        return note + result
+    return result
+
+def bias_stale_note(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    return t.get("bias_stale_note", "⚠️ Le dataset a changé : relancez le rapport de biais IA pour actualiser l'analyse.")
 
 # ==========================================
 # GESTION DYNAMIQUE DU CHANGEMENT DE LANGUE
 # ==========================================
-def change_language(lang, stats_df, config_df, lib_state):
+def _strategy_key(strategy):
+    strategy = str(strategy or "").strip()
+    if strategy in ["Filtre Classique", "Classic Filter", "Filtre Classique (Contient au moins un tag)", "Classic Filter (Contains at least one tag)"]:
+        return "classic"
+    if strategy in ["Équilibrage Auto (Pourcentages)", "Auto Balancing (Percentages)"]:
+        return "balance"
+    if strategy in ["Priorité", "Priority", "Priorité (Ordre du tableau)", "Priority (Table Order)"]:
+        return "priority"
+    return "classic"
+
+def _localized_strategy_value(strategy, lang):
+    choices = UI_T.get(lang, UI_T.get("FR", {})).get("strat_choices", [])
+    if not choices:
+        return ""
+    idx_by_key = {"classic": 0, "balance": 1, "priority": 2}
+    idx = idx_by_key.get(_strategy_key(strategy), 0)
+    return choices[idx] if idx < len(choices) else choices[0]
+
+def _compact_select_all_label(label, lang="FR"):
+    if lang == "EN":
+        return "☑️ All"
+    return "☑️ Tout"
+
+def _compact_multi_select_label(label, lang="FR"):
+    return "✅ Multi"
+
+def change_language(lang, stats_df, config_df, lib_state, current_strategy):
     t = UI_T.get(lang, UI_T.get("FR", {})) 
     m = MSG.get(lang, MSG.get("FR", {}))
     new_stats = stats_df
@@ -3379,11 +6556,12 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(placeholder=t.get("tracked_ph", "")),
         gr.update(label=t.get("ai_recipe_count", "Nombre de mots-clés IA")),
         gr.update(value=t.get("btn_ai_recipe", "🤖 Remplir par IA")),
-        gr.update(value=t.get("btn_analyze_recipe", "📊 Lancer l'analyse des données")),
+        gr.update(value=t.get("btn_analyze_recipe", "📊 Analyser")),
         
         gr.update(value=t.get("gallery_title", "")),
         gr.update(label=t.get("search", ""), placeholder=t.get("search_ph", "")),
-        gr.update(label=t.get("multi_cb", "")),
+        gr.update(label=_compact_multi_select_label(t.get("multi_cb", ""), lang)),
+        gr.update(value=_compact_select_all_label(t.get("btn_select_all", ""), lang)),
         gr.update(value=t.get("clear_sel", "")),
         gr.update(label=t.get("cols", "")),
         
@@ -3391,6 +6569,7 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("tab_view", "")),
         gr.update(value=t.get("btn_prev", "")),
         gr.update(value=t.get("btn_next", "")),
+        gr.update(value=t.get("btn_delete_current", "🗑️ Supprimer cette image")),
         gr.update(value=t.get("shortcuts", "")),
         gr.update(value=t.get("toggle_stat", "")),
         
@@ -3415,11 +6594,17 @@ def change_language(lang, stats_df, config_df, lib_state):
         
         gr.update(label=t.get("tab_prep", "")),
         gr.update(value=t.get("dup_title", "")),
+        gr.update(label=t.get("hash_algo", "Algorithme de hash")),
         gr.update(label=t.get("hash_tol", "")),
+        gr.update(value=t.get("hash_tol_help", "")),
         gr.update(value=t.get("btn_scan_dups", "")),
         gr.update(label=t.get("dup_dd", "")),
+        gr.update(label=t.get("dup_caption_A", "Caption A")),
+        gr.update(label=t.get("dup_caption_B", "Caption B")),
         gr.update(value=t.get("btn_del_A", "")),
+        gr.update(value=t.get("btn_skip_dup", "⏭️ Ignorer ce doublon")),
         gr.update(value=t.get("btn_del_B", "")),
+        gr.update(value=t.get("btn_delete_all_b", "🗑️ Supprimer tous les B")),
         
         gr.update(value=t.get("rename_title", "")),
         gr.update(label=t.get("rename_prefix", "")),
@@ -3431,6 +6616,9 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("prep_alpha", "")),
         gr.update(label=t.get("prep_dest", "")),
         gr.update(value=t.get("btn_prep", "")),
+        gr.update(label=t.get("prep_min_res", "Résolution minimum (px) — 0 = pas de filtre")),
+        gr.update(value=t.get("btn_detect_low_res", "🔍 Détecter sous ce seuil")),
+        gr.update(value=t.get("btn_move_low_res", "📦 Déplacer dans '_trop_petites'")),
         
         gr.update(label=t.get("tab_ai", "")),
         gr.update(value=t.get("ai_conf_title", "")),
@@ -3441,17 +6629,22 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("api_url_input", "")),
         gr.update(label=t.get("ai_temp", "")),
         gr.update(label=t.get("ai_ctx", "")),
+        gr.update(label=t.get("ai_timeout", "Timeout API (secondes)")),
         gr.update(label=t.get("ai_sys", "")),
         
         gr.update(value=t.get("ai_act_title", "")),
-        gr.update(label=t.get("ai_action_dd", "")),
-        gr.update(label=t.get("ai_tpl_dd", "")),
+        gr.update(label=t.get("ai_format_preset", "📋 Preset de format"), choices=list(load_ai_format_presets().keys())),
+        gr.update(label=t.get("ai_action_dd", ""), choices=load_ai_action_choices()),
+        gr.update(label=t.get("ai_tpl_dd", ""), choices=load_ai_template_choices()),
         gr.update(label=t.get("ai_tpl_name", "")),
         gr.update(value=t.get("btn_save_tpl", "")),
         gr.update(label=t.get("custom_prompt_input", "")),
         gr.update(label=t.get("use_vision_custom", "")),
         gr.update(label=t.get("injection_mode", "")),
+        gr.update(value=t.get("ai_injection_note", "")),
         gr.update(value=t.get("btn_run_ai", "")),
+        gr.update(value=t.get("btn_test_ai", "🧪 Tester sur l'image courante")),
+        gr.update(value=t.get("btn_select_no_caption", "🎯 Sélectionner sans caption")),
         gr.update(value=t.get("btn_undo_ai", "")),
         
         gr.update(value=t.get("bias_title", "")),
@@ -3466,7 +6659,7 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("quick_prio", "")),
         gr.update(label=t.get("quick_tgt", "")),
         gr.update(value=new_config, headers=t.get("exp_df_headers", [])),
-        gr.update(label=t.get("strat", ""), choices=t.get("strat_choices", [])),
+        gr.update(label=t.get("strat", ""), choices=t.get("strat_choices", []), value=_localized_strategy_value(current_strategy, lang)),
         gr.update(label=t.get("max_img", "")),
         gr.update(label=t.get("dest_folder", ""), placeholder=t.get("dest_ph", "")),
         gr.update(label=t.get("export_suffix", "Suffixe d'export"), placeholder=t.get("export_suffix_ph", "-Sx → -S1, -S2, -S3...")),
@@ -3478,6 +6671,8 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(label=t.get("tab_stats", "")),
         gr.update(value=new_stats, headers=t.get("stat_df_headers", [])),
         gr.update(value=t.get("btn_civitai", "")),
+        gr.update(value=t.get("btn_export_stats_csv", "Exporter CSV")),
+        gr.update(value=t.get("btn_export_stats_md", "Exporter Markdown")),
         gr.update(value=t.get("btn_top20", "")),
         gr.update(value=t.get("btn_orph", "")),
         gr.update(label=t.get("txt_orph", "")),
@@ -3530,13 +6725,19 @@ def change_language(lang, stats_df, config_df, lib_state):
         gr.update(value=t.get("lm_studio_unload_llm", "")),
         gr.update(value=t.get("lm_studio_unload_shared", "")),
         gr.update(value=t.get("lm_studio_save_choices", "")),
+        # Nouveaux composants v4.4
+        gr.update(label=t.get("recent_paths_dd", "Chemins récents")),
+        gr.update(label=t.get("csv_acc_title", "📋 Import / Export CSV")),
+        gr.update(value=t.get("csv_acc_hint", "")),
+        gr.update(value=t.get("btn_export_csv_captions", "⬇️ Exporter CSV")),
+        gr.update(value=t.get("btn_import_csv_captions", "⬆️ Importer CSV")),
     )
 
 # ==========================================
 # INTERFACE GRADIO
 # ==========================================
 
-blocks_kwargs = {"title": "IMG Dataset Refiner v4.3 Pro"}
+blocks_kwargs = {"title": APP_TITLE}
 if get_gradio_major_version() < 6:
     blocks_kwargs["css"] = css_code
 
@@ -3552,7 +6753,8 @@ with gr.Blocks(**blocks_kwargs) as app:
     recipe_selected_row = gr.State(-1)
     
     # State pour la bibliothèque Custom HTML
-    lib_state = gr.State([])
+    initial_library = load_library()
+    lib_state = gr.State(initial_library)
     
     dup_mapping_state = gr.State({})
     dup_idA = gr.State(-1)
@@ -3562,6 +6764,9 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_hidden_sync_input = gr.Textbox(value="{}", elem_id="hidden_sync_input")
     ui_hidden_sync_btn = gr.Button(elem_id="hidden_sync_btn")
     ui_hidden_calc_btn = gr.Button(elem_id="hidden_calc_btn")
+    ui_hidden_live_translation_btn = gr.Button(elem_id="hidden_live_translation_btn")
+    ui_hidden_reverse_translation_btn = gr.Button(elem_id="hidden_reverse_translation_btn")
+    ui_hidden_delete_current_btn = gr.Button(elem_id="hidden_delete_current_btn")
     ui_hidden_dnd_input = gr.Textbox(elem_id="hidden_dnd_input")
     ui_hidden_dnd_btn = gr.Button(elem_id="hidden_dnd_btn")
     ui_hidden_tags_input = gr.Textbox(elem_id="hidden_tags_input")
@@ -3573,61 +6778,67 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_hidden_lib_toggle_btn = gr.Button(elem_id="hidden_lib_toggle_btn")
     ui_hidden_lib_delete_input = gr.Textbox(elem_id="hidden_lib_delete_input")
     ui_hidden_lib_delete_btn = gr.Button(elem_id="hidden_lib_delete_btn")
+    ui_hidden_copy_next_btn = gr.Button(elem_id="hidden_copy_next_btn")
+    ui_hidden_manual_crop_payload = gr.Textbox(elem_id="hidden_manual_crop_payload")
+    ui_hidden_manual_crop_btn = gr.Button(elem_id="hidden_manual_crop_btn")
     
-    t_init = UI_T.get("FR", {})
+    default_lang = "EN" if "EN" in get_available_languages() else (get_available_languages()[0] if get_available_languages() else "FR")
+    t_init = UI_T.get(default_lang, UI_T.get("FR", {}))
     ai_settings_init = load_ai_settings()
     ui_settings_init = load_ui_settings()
 
     with gr.Row(elem_id="top_workspace"):
         with gr.Column(scale=2, elem_id="dataset_header"):
-            ui_title = gr.Markdown(t_init.get("title", ""), elem_id="app_title")
-
-            ui_settings_acc = gr.Accordion(t_init.get("settings_title", "⚙️ Paramètres"), open=False)
-            with ui_settings_acc:
-                lang_radio = gr.Radio(get_available_languages(), value="FR", label="Language / Langue")
-                ui_guide_acc = gr.Accordion(t_init.get("guide_title", ""), open=False)
-                with ui_guide_acc:
-                    ui_guide_text = gr.Markdown(t_init.get("guide_text", ""))
-                ui_lang_import_acc = gr.Accordion(t_init.get("lang_import_acc", "🌐 Import langue"), open=False)
-                with ui_lang_import_acc:
-                    ui_lang_import_info = gr.Markdown(t_init.get("lang_import_info", ""))
-                    ui_lang_import_file = gr.File(label=t_init.get("lang_import_file", "JSON file"),
-                                                  file_types=[".json"], file_count="single", type="filepath")
-                    ui_lang_import_btn = gr.Button(t_init.get("lang_import_btn", "📥 Importer"), variant="secondary")
-                    ui_lang_import_status = gr.Markdown()
+            with gr.Row(elem_id="dataset_title_row"):
+                with gr.Column(scale=3):
+                    ui_title = gr.Markdown(t_init.get("title", ""), elem_id="app_title")
+                with gr.Column(scale=1, elem_id="dataset_settings_col"):
+                    ui_settings_acc = gr.Accordion(t_init.get("settings_title", "⚙️ Paramètres"), open=False)
+                    with ui_settings_acc:
+                        lang_radio = gr.Radio(get_available_languages(), value=default_lang, label="Language / Langue", elem_id="language_selector")
+                        ui_guide_acc = gr.Accordion(t_init.get("guide_title", ""), open=False)
+                        with ui_guide_acc:
+                            ui_guide_text = gr.Markdown(t_init.get("guide_text", ""))
+                        ui_lang_import_acc = gr.Accordion(t_init.get("lang_import_acc", "🌐 Import langue"), open=False)
+                        with ui_lang_import_acc:
+                            ui_lang_import_info = gr.Markdown(t_init.get("lang_import_info", ""))
+                            ui_lang_import_file = gr.File(label=t_init.get("lang_import_file", "JSON file"),
+                                                          file_types=[".json"], file_count="single", type="filepath")
+                            ui_lang_import_btn = gr.Button(t_init.get("lang_import_btn", "📥 Importer"), variant="secondary")
+                            ui_lang_import_status = gr.Markdown()
             
-            with gr.Row():
-                dir_input = gr.Textbox(placeholder="C:\\mon\\dataset, D:\\autre\\concept, ~/datasets/portrait, ...", show_label=False, scale=4, elem_id="dataset_dir_input")
-                ui_browse_btn = gr.Button(t_init.get("browse", ""), scale=1)
-            ui_dataset_drop_zone = gr.HTML(render_dataset_drop_zone("FR"))
-            ui_load_btn = gr.Button(t_init.get("load", ""), variant="primary", elem_id="dataset_load_btn")
-            ui_status_text = gr.Markdown(t_init.get("status_wait", ""), elem_id="dataset_status_text")
-            
-            # ⭐ Section Favoris — placée ici car il s'agit d'une méthode
-            # d'importation de dataset (chargement rapide via favoris).
+            _init_recents = load_recent_paths()
             _init_favs = load_favorites()
-            ui_fav_section_title = gr.Accordion(t_init.get("fav_section_title", "⭐ Favoris"), open=False)
-            with ui_fav_section_title:
-                with gr.Row():
-                    ui_fav_dropdown = gr.Dropdown(choices=_init_favs, value=(_init_favs[0] if _init_favs else None),
-                                                   label=t_init.get("fav_dropdown", "Charger un favori"),
-                                                   scale=3, interactive=True, allow_custom_value=False)
-                with gr.Row():
-                    ui_btn_add_fav = gr.Button(t_init.get("btn_add_fav", "⭐ Ajouter aux favoris"), size="sm", scale=1)
-                    ui_btn_remove_fav = gr.Button(t_init.get("btn_remove_fav", "🗑️ Retirer ce favori"),
-                                                    variant="stop", size="sm", scale=1)
-            
+            with gr.Row(elem_id="dataset_quick_row"):
+                with gr.Column(scale=3, elem_id="dataset_path_col"):
+                    with gr.Row(elem_id="dataset_path_row"):
+                        dir_input = gr.Textbox(placeholder="C:\\mon\\dataset, D:\\autre\\concept, ~/datasets/portrait, ...", show_label=False, scale=4, elem_id="dataset_dir_input")
+                        ui_browse_btn = gr.Button(t_init.get("browse", ""), scale=1)
+                    ui_recent_paths_dd = gr.Dropdown(choices=_init_recents, label=t_init.get("recent_paths_dd", "Chemins récents"), interactive=True, allow_custom_value=False, value=None)
+                    ui_fav_section_title = gr.Accordion(t_init.get("fav_section_title", "⭐ Favoris"), open=False)
+                    with ui_fav_section_title:
+                        ui_fav_dropdown = gr.Dropdown(choices=_init_favs, value=None,
+                                                       label=t_init.get("fav_dropdown", "Charger un favori"),
+                                                       interactive=True, allow_custom_value=False)
+                        with gr.Row():
+                            ui_btn_add_fav = gr.Button(t_init.get("btn_add_fav", "⭐ Ajouter aux favoris"), size="sm", scale=1)
+                            ui_btn_remove_fav = gr.Button(t_init.get("btn_remove_fav", "🗑️ Retirer ce favori"),
+                                                            variant="stop", size="sm", scale=1)
+                with gr.Column(scale=2, elem_id="dataset_drop_col"):
+                    ui_dataset_drop_zone = gr.HTML(render_dataset_drop_zone(default_lang))
+                    ui_load_btn = gr.Button(t_init.get("load", ""), variant="primary", elem_id="dataset_load_btn")
+                    ui_status_text = gr.Markdown(t_init.get("status_wait", ""), elem_id="dataset_status_text")
+
         with gr.Column(scale=3, elem_id="recipe_header"):
             ui_recipe_global = gr.Markdown(t_init.get("recipe_global", ""))
-            with gr.Row():
+            with gr.Row(elem_id="recipe_save_row"):
                 ui_recipes_dropdown = gr.Dropdown(choices=list(load_recipes().keys()), label=t_init.get("recipes_dd", ""), scale=2)
                 ui_recipe_name = gr.Textbox(label=t_init.get("recipe_name", ""), scale=1)
                 ui_save_recipe_btn = gr.Button(t_init.get("save_recipe", ""), scale=1)
-            with gr.Row():
-                ui_btn_delete_recipe = gr.Button(t_init.get("btn_delete_recipe", "🗑️ Supprimer cette recette"),
-                                                  variant="stop", size="sm")
-            ui_tracked_words = gr.Textbox(show_label=False, placeholder=t_init.get("tracked_ph", ""), lines=2, elem_id="tracked_words_input")
-            with gr.Row():
+                ui_btn_delete_recipe = gr.Button(t_init.get("btn_delete_recipe", "🗑️ Supprimer"),
+                                                  variant="stop", size="sm", scale=1)
+            ui_tracked_words = gr.Textbox(show_label=False, placeholder=t_init.get("tracked_ph", ""), lines=1, elem_id="tracked_words_input")
+            with gr.Row(elem_id="recipe_ai_row"):
                 ui_ai_recipe_count = gr.Number(
                     value=20, precision=0,
                     label=t_init.get("ai_recipe_count", "Nombre de mots-clés IA"),
@@ -3637,22 +6848,40 @@ with gr.Blocks(**blocks_kwargs) as app:
                     t_init.get("btn_ai_recipe", "🤖 Remplir par IA"),
                     variant="secondary", size="sm", scale=2, elem_id="ai_recipe_btn",
                 )
-            ui_btn_analyze_recipe = gr.Button(t_init.get("btn_analyze_recipe", "📊 Lancer l'analyse des données"), variant="secondary", size="sm", elem_id="analyze_recipe_btn")
+                ui_btn_analyze_recipe = gr.Button(t_init.get("btn_analyze_recipe", "📊 Analyser"), variant="secondary", size="sm", scale=2, elem_id="analyze_recipe_btn")
 
     with gr.Row(elem_id="workbench_row"):
         with gr.Column(scale=0, elem_id="left_panel") as left_panel:
             ui_gallery_title = gr.Markdown(t_init.get("gallery_title", ""))
-            ui_search_box = gr.Textbox(label=t_init.get("search", ""), placeholder=t_init.get("search_ph", ""))
-            ui_sort_order = gr.Radio(["A-Z", "Z-A"], value="A-Z", label=t_init.get("sort_label", "Trier / Sort"))
-            
-            with gr.Row():
-                ui_multi_select_cb = gr.Checkbox(label=t_init.get("multi_cb", ""), value=False, interactive=True, elem_id="multi_cb", scale=2)
-                ui_clear_sel_btn = gr.Button(t_init.get("clear_sel", ""), elem_id="clear_sel_btn", scale=1)
+            ui_search_box = gr.Textbox(label=t_init.get("search", ""), placeholder=t_init.get("search_ph", ""), elem_id="gallery_search_box")
+            with gr.Row(elem_id="gallery_sort_select_row"):
+                ui_sort_order = gr.Radio(["A-Z", "Z-A"], value="A-Z", label=t_init.get("sort_label", "Trier / Sort"), elem_id="gallery_sort_radio", scale=2)
+                ui_multi_select_cb = gr.Checkbox(label=_compact_multi_select_label(t_init.get("multi_cb", ""), default_lang), value=False, interactive=True, elem_id="multi_cb", scale=2)
+                ui_select_all_btn = gr.Button(_compact_select_all_label(t_init.get("btn_select_all", ""), default_lang), elem_id="select_all_btn", size="sm", scale=1)
+                ui_clear_sel_btn = gr.Button(t_init.get("clear_sel", ""), elem_id="clear_sel_btn", size="sm", scale=1)
                 
-            ui_selection_status = gr.Markdown("**...**")
+            ui_selection_status = gr.Markdown("", elem_id="ui_selection_status")
+            ui_csv_acc = gr.Accordion(t_init.get("csv_acc_title", "📋 Import / Export CSV"), open=False, elem_id="gallery_csv_acc")
+            with ui_csv_acc:
+                ui_csv_hint = gr.Markdown(t_init.get("csv_acc_hint", ""))
+                with gr.Row(elem_id="csv_actions_row"):
+                    ui_btn_export_csv_captions = gr.Button(t_init.get("btn_export_csv_captions", "⬇️ Exporter CSV"), scale=1, size="sm")
+                    ui_btn_import_csv_captions = gr.Button(t_init.get("btn_import_csv_captions", "⬆️ Importer CSV"), scale=1, size="sm")
+                with gr.Row(elem_id="md_actions_row"):
+                    ui_btn_export_md_captions = gr.Button("⬇️ Export captions MD", scale=1, size="sm")
+                    ui_btn_import_md_captions = gr.Button("⬆️ Import filled MD", scale=1, size="sm")
+                ui_csv_import_file = gr.File(
+                    label="Drop filled CSV/MD / Déposez le CSV/MD rempli",
+                    file_types=[".csv", ".md"],
+                    file_count="single",
+                    type="filepath",
+                    visible=True,
+                    elem_id="caption_import_dropzone",
+                )
+                ui_csv_status = gr.Markdown()
             initial_gallery_cols = int(ui_settings_init.get("gallery_columns", DEFAULT_UI_SETTINGS["gallery_columns"]))
             ui_gallery_cols = gr.Slider(minimum=1, maximum=6, step=1, value=initial_gallery_cols, label=t_init.get("cols", ""), interactive=True)
-            gallery = gr.Gallery(label="Dataset", columns=initial_gallery_cols, rows=6, height=750, object_fit="contain", allow_preview=False, elem_id="main_gallery")
+            gallery = gr.Gallery(label="Dataset", columns=initial_gallery_cols, rows=6, height=750, object_fit="cover", allow_preview=False, elem_id="main_gallery")
             
         with gr.Column(scale=1, elem_id="center_panel"):
             with gr.Row(elem_id="panel_toggles_row"):
@@ -3665,17 +6894,19 @@ with gr.Blocks(**blocks_kwargs) as app:
                     with gr.Row():
                         ui_btn_prev = gr.Button(t_init.get("btn_prev", ""), elem_id="prev_btn")
                         ui_btn_next = gr.Button(t_init.get("btn_next", ""), elem_id="next_btn")
-                    ui_viewer_status = gr.Markdown("**...**")
+                        ui_btn_delete_current = gr.Button(t_init.get("btn_delete_current", "🗑️ Supprimer cette image"), variant="stop", elem_id="delete_current_btn")
+                    ui_viewer_status = gr.Markdown("")
                     with gr.Row():
                         current_img = gr.Image(interactive=False, type="filepath", height=350, elem_id="viewer_area")
                         with gr.Column(elem_id="viewer_area_text"):
                             highlight_preview = gr.HTML()
                             word_counter = gr.HTML("<div style='color:green;'>0</div>")
-                            ui_viewer_shortcuts = gr.Markdown(t_init.get("shortcuts", ""))
+                            with gr.Accordion("🎹 Actions / Shortcuts", open=False, elem_id="viewer_shortcuts_acc"):
+                                ui_viewer_shortcuts = gr.Markdown(t_init.get("shortcuts", ""))
                             ui_toggle_tag_btn = gr.Button(t_init.get("toggle_stat", ""), variant="secondary", elem_id="toggle_tag_btn")
                     
                     current_caption = gr.Textbox(show_label=False, lines=4, elem_id="viewer_caption_area")
-                    ui_live_translation_output = gr.Textbox(label=t_init.get("live_trans_label", ""), interactive=False, lines=3, elem_id="live_translation_preview")
+                    ui_live_translation_output = gr.Textbox(label=t_init.get("live_trans_label", ""), interactive=True, lines=3, elem_id="live_translation_preview")
                     
                     ui_save_single_btn = gr.Button(t_init.get("save_cap", ""), variant="primary", elem_id="save_single_btn")
                     ui_single_save_status = gr.Markdown()
@@ -3711,32 +6942,81 @@ with gr.Blocks(**blocks_kwargs) as app:
 
                 ui_tab_prep = gr.Tab(t_init.get("tab_prep", ""))
                 with ui_tab_prep:
-                    with gr.Row():
-                        with gr.Column(scale=1):
+                    with gr.Row(elem_id="prep_workspace"):
+                        with gr.Column(scale=1, elem_id="prep_duplicate_panel"):
                             ui_dup_title = gr.Markdown(t_init.get("dup_title", ""))
+                            prep_hash_algo = gr.Dropdown(["average_hash", "phash", "dhash", "whash"], value="phash", label=t_init.get("hash_algo", "Algorithme de hash"))
                             ui_hash_tol = gr.Slider(0, 20, 5, step=1, label=t_init.get("hash_tol", ""))
+                            ui_hash_tol_help = gr.Markdown(t_init.get("hash_tol_help", ""))
                             btn_scan_dups = gr.Button(t_init.get("btn_scan_dups", ""))
                             dup_dropdown = gr.Dropdown(label=t_init.get("dup_dd", ""), interactive=True)
+                            dup_recommendation = gr.Markdown(elem_id="dup_recommendation")
                             with gr.Row():
                                 dup_img_A = gr.Image(label="Image A", interactive=False, height=200)
                                 dup_img_B = gr.Image(label="Image B", interactive=False, height=200)
                             with gr.Row():
+                                dup_caption_A = gr.Textbox(label=t_init.get("dup_caption_A", "Caption A"), interactive=False, lines=4)
+                                dup_caption_B = gr.Textbox(label=t_init.get("dup_caption_B", "Caption B"), interactive=False, lines=4)
+                            with gr.Row():
                                 btn_del_A = gr.Button(t_init.get("btn_del_A", ""), variant="stop")
+                                btn_skip_dup = gr.Button(t_init.get("btn_skip_dup", "⏭️ Ignorer ce doublon"))
                                 btn_del_B = gr.Button(t_init.get("btn_del_B", ""), variant="stop")
+                            btn_delete_recommended_dup = gr.Button(t_init.get("btn_delete_recommended_dup", "🧠 Delete recommended duplicate"), variant="stop")
+                            btn_delete_all_b = gr.Button(t_init.get("btn_delete_all_b", "🗑️ Supprimer tous les B"), variant="stop")
                             dup_status = gr.Markdown()
-                        with gr.Column(scale=1):
+                        with gr.Column(scale=1, elem_id="prep_transform_panel"):
                             ui_rename_title = gr.Markdown(t_init.get("rename_title", ""))
                             ui_rename_prefix = gr.Textbox(label=t_init.get("rename_prefix", ""), placeholder="concept")
                             btn_rename = gr.Button(t_init.get("btn_rename", ""))
                             gr.Markdown("---")
                             ui_resize_title = gr.Markdown(t_init.get("resize_title", ""))
+                            with gr.Row(elem_id="prep_preset_row"):
+                                prep_preset = gr.Dropdown(
+                                    list(PREP_WORKFLOW_PRESETS.keys()),
+                                    value="Flux LoRA 1024 · WebP",
+                                    label=t_init.get("prep_preset", "Workflow preset"),
+                                    interactive=True,
+                                )
+                                btn_apply_prep_preset = gr.Button(t_init.get("btn_apply_prep_preset", "⚡ Apply"), size="sm")
                             prep_size = gr.Dropdown(["512", "768", "1024", "1536"], value="1024", label=t_init.get("prep_size", ""))
-                            prep_format = gr.Dropdown(["WebP", "JPEG"], value="WebP", label=t_init.get("prep_format", ""))
+                            prep_format = gr.Dropdown(["WebP", "JPEG", "PNG"], value="WebP", label=t_init.get("prep_format", ""))
                             prep_crop = gr.Dropdown(["Conserver Ratio", "1:1 (Carré Centre)", "Smart Face Crop (OpenCV)"], value="Conserver Ratio", label=t_init.get("prep_crop", ""))
                             prep_alpha = gr.Checkbox(value=True, label=t_init.get("prep_alpha", ""))
                             prep_dest = gr.Textbox(label=t_init.get("prep_dest", ""), placeholder="...")
+                            prep_quick_summary = gr.HTML(prep_workflow_summary([], [], "", "1024", "WebP", "Conserver Ratio", True, default_lang))
                             btn_prep = gr.Button(t_init.get("btn_prep", ""), variant="primary")
                             prep_status = gr.Markdown()
+                            gr.Markdown("---")
+                            with gr.Group(elem_id="prep_low_res_panel"):
+                                prep_min_res = gr.Number(label=t_init.get("prep_min_res", "Résolution minimum (px) — 0 = pas de filtre"), value=0, precision=0)
+                                with gr.Row():
+                                    btn_detect_low_res = gr.Button(t_init.get("btn_detect_low_res", "🔍 Détecter sous ce seuil"))
+                                    btn_move_low_res = gr.Button(t_init.get("btn_move_low_res", "📦 Déplacer dans '_trop_petites'"), variant="secondary")
+                                low_res_df = gr.Dataframe(headers=["ID", "Image", "Largeur", "Hauteur", "Min"], interactive=False)
+
+                    with gr.Accordion(t_init.get("manual_crop_acc", "✂️ Manual crop (image by image)"), open=False, elem_id="manual_crop_acc"):
+                        manual_crop_hint = gr.Markdown(t_init.get("manual_crop_hint", "Load the current image, choose a ratio, adjust the crop on the canvas, then overwrite the image file directly."))
+                        manual_crop_canvas = gr.HTML(render_manual_cropper(default_lang))
+                        with gr.Row(elem_id="manual_crop_nav"):
+                            btn_manual_crop_prev = gr.Button(t_init.get("btn_manual_crop_prev", "⬅️ Previous"), size="sm", elem_id="manual_crop_prev_btn")
+                            btn_manual_crop_next = gr.Button(t_init.get("btn_manual_crop_next", "➡️ Next / Skip"), size="sm", elem_id="manual_crop_next_btn")
+                        manual_crop_editor = gr.ImageEditor(
+                            label=t_init.get("manual_crop_editor", "Crop source"),
+                            type="pil",
+                            image_mode="RGBA",
+                            transforms=("crop",),
+                            brush=False,
+                            eraser=False,
+                            layers=False,
+                            height=420,
+                            elem_id="manual_crop_editor",
+                            buttons=["fullscreen", "download"],
+                        )
+                        with gr.Row(elem_id="manual_crop_actions", visible=False):
+                            btn_load_manual_crop = gr.Button(t_init.get("btn_load_manual_crop", "↙️ Load current image"), size="sm", elem_id="manual_crop_backend_load_btn")
+                            btn_save_manual_crop = gr.Button(t_init.get("btn_save_manual_crop", "💾 Save crop"), variant="secondary", size="sm")
+                            btn_save_manual_crop_next = gr.Button(t_init.get("btn_save_manual_crop_next", "💾 Save & next"), variant="secondary", size="sm")
+                        manual_crop_status = gr.Markdown()
 
                 ui_tab_ai = gr.Tab(t_init.get("tab_ai", ""))
                 with ui_tab_ai:
@@ -3764,6 +7044,7 @@ with gr.Blocks(**blocks_kwargs) as app:
                                 )
                                 ai_temp = gr.Slider(minimum=0.0, maximum=2.0, value=ai_settings_init.get("temperature", DEFAULT_AI_SETTINGS["temperature"]), step=0.1, label=t_init.get("ai_temp", ""))
                                 ai_ctx = gr.Number(value=ai_settings_init.get("context", DEFAULT_AI_SETTINGS["context"]), label=t_init.get("ai_ctx", ""))
+                                api_timeout = gr.Number(value=ai_settings_init.get("timeout", DEFAULT_AI_SETTINGS["timeout"]), precision=0, label=t_init.get("ai_timeout", "Timeout API (secondes)"))
                                 ai_sys = gr.Textbox(value=ai_settings_init.get("system_prompt", DEFAULT_AI_SETTINGS["system_prompt"]), label=t_init.get("ai_sys", ""), lines=2)
 
                             # 🎯 LM Studio : Chargement automatique des modèles favoris
@@ -3814,32 +7095,50 @@ with gr.Blocks(**blocks_kwargs) as app:
                                 ui_lm_studio_status = gr.Markdown(label=t_init.get("lm_studio_status", "LM Studio Status"))
                         with gr.Column(scale=2):
                             ui_ai_act_title = gr.Markdown(t_init.get("ai_act_title", ""))
-                            ai_action_dropdown = gr.Dropdown([
-                                "Auto-Taggage / Super OCR (VLM)",
-                                "Reality Check & Hallucinations (VLM)",
-                                "Concept Isolator (Spécial LoRA)",
-                                "Traducteur Visuel (Booru ↔ Phrase Naturelle)",
-                                "Tag Sorting & Standardisation",
-                                "Traduction Automatique (Vers Anglais)",
-                                "✨ Prompt Personnalisé (Texte/Vision)"
-                            ], label=t_init.get("ai_action_dd", ""), value="Auto-Taggage / Super OCR (VLM)")
+                            ai_format_preset = gr.Dropdown(choices=list(load_ai_format_presets().keys()), value="Personnalisé", label=t_init.get("ai_format_preset", "📋 Caption structure preset"))
+                            ai_action_dropdown = gr.Dropdown(load_ai_action_choices(), label=t_init.get("ai_action_dd", "⚙️ AI action to run"), value="Auto-Taggage / Super OCR (VLM)")
                             ai_action_desc = gr.HTML()
                             with gr.Group(visible=False) as custom_prompt_group:
                                 with gr.Row():
-                                    ai_template_dd = gr.Dropdown(choices=list(load_ai_recipes().keys()), label=t_init.get("ai_tpl_dd", ""))
+                                    ai_template_dd = gr.Dropdown(choices=load_ai_template_choices(), label=t_init.get("ai_tpl_dd", ""))
                                     ai_template_name = gr.Textbox(label=t_init.get("ai_tpl_name", ""))
                                     btn_save_template = gr.Button(t_init.get("btn_save_tpl", ""))
                                 custom_prompt_input = gr.Textbox(label=t_init.get("custom_prompt_input", ""), placeholder="...", lines=3)
                                 use_vision_for_custom = gr.Checkbox(label=t_init.get("use_vision_custom", ""))
-                            with gr.Group(visible=False) as injection_group:
+                            with gr.Group(visible=True) as injection_group:
                                 injection_mode = gr.Radio(["Remplacer tout", "Ajouter au début", "Ajouter à la fin"], label=t_init.get("injection_mode", ""), value="Remplacer tout")
+                                ai_injection_note = gr.Markdown(t_init.get("ai_injection_note", ""))
+                            with gr.Accordion(t_init.get("ai_action_manager_acc", "🛠️ Edit / create AI actions (JSON)"), open=False, elem_id="ai_action_manager"):
+                                with gr.Row():
+                                    ai_action_edit_name = gr.Textbox(label=t_init.get("ai_action_edit_name", "Action name"), value="Auto-Taggage / Super OCR (VLM)")
+                                    ai_action_edit_vision = gr.Checkbox(label=t_init.get("ai_action_edit_vision", "Use image/VLM"), value=True)
+                                    ai_action_edit_injection = gr.Radio(["Remplacer tout", "Ajouter au début", "Ajouter à la fin"], label=t_init.get("ai_action_edit_injection", "Default injection"), value="Remplacer tout")
+                                ai_action_edit_desc = gr.Textbox(label=t_init.get("ai_action_edit_desc", "Short description"), lines=2, value="Analyse complète de l'image et extraction du texte.")
+                                ai_action_edit_prompt = gr.Textbox(
+                                    label=t_init.get("ai_action_edit_prompt", "Prompt template"),
+                                    placeholder="{tags} / {caption} / {filename}",
+                                    lines=5,
+                                    value=AI_ACTION_PROMPTS["Auto-Taggage / Super OCR (VLM)"],
+                                )
+                                with gr.Row(elem_id="ai_action_manager_buttons"):
+                                    btn_save_ai_action = gr.Button(t_init.get("btn_save_ai_action", "💾 Save action"), variant="primary", size="sm")
+                                    btn_delete_ai_action = gr.Button(t_init.get("btn_delete_ai_action", "🗑️ Delete custom override"), variant="stop", size="sm")
+                                with gr.Row(elem_id="ai_action_json_buttons"):
+                                    ai_actions_import_file = gr.File(label=t_init.get("ai_actions_import_file", "Import JSON"), file_types=[".json"], file_count="single", type="filepath")
+                                    btn_import_ai_actions = gr.Button(t_init.get("btn_import_ai_actions", "⬆️ Import actions"), size="sm")
+                                    btn_export_ai_actions = gr.Button(t_init.get("btn_export_ai_actions", "⬇️ Export actions"), size="sm")
+                                ai_actions_export_file = gr.File(label=t_init.get("ai_actions_export_file", "Exported JSON"), interactive=False)
+                                ai_actions_manage_status = gr.Markdown()
                             with gr.Row():
                                 btn_run_ai = gr.Button(t_init.get("btn_run_ai", ""), variant="primary")
+                                btn_test_ai = gr.Button(t_init.get("btn_test_ai", "🧪 Tester sur l'image courante"), variant="secondary")
+                                btn_select_no_caption = gr.Button(t_init.get("btn_select_no_caption", "🎯 Sélectionner sans caption"), variant="secondary")
                                 btn_undo_ai = gr.Button(t_init.get("btn_undo_ai", ""), variant="stop")
                             ai_status = gr.Markdown()
                     gr.Markdown("---")
                     ui_bias_title = gr.Markdown(t_init.get("bias_title", ""))
                     btn_bias = gr.Button(t_init.get("btn_bias", ""), variant="secondary")
+                    bias_stale_notice = gr.Markdown()
                     txt_bias = gr.Textbox(label=t_init.get("txt_bias", ""), lines=5, interactive=False)
 
                 ui_tab_export = gr.Tab(t_init.get("tab_export", ""))
@@ -3876,6 +7175,10 @@ with gr.Blocks(**blocks_kwargs) as app:
                         with gr.Column(scale=1):
                             ui_stats_table = gr.Dataframe(headers=t_init.get("stat_df_headers", []), interactive=True, type="pandas", row_count=("dynamic"))
                             ui_btn_civitai = gr.Button(t_init.get("btn_civitai", ""), variant="secondary")
+                            with gr.Row():
+                                ui_btn_export_stats_csv = gr.Button(t_init.get("btn_export_stats_csv", "Exporter CSV"), size="sm")
+                                ui_btn_export_stats_md = gr.Button(t_init.get("btn_export_stats_md", "Exporter Markdown"), size="sm")
+                            ui_stats_export_file = gr.File(label=t_init.get("stats_export_file", "Fichier exporté"), interactive=False)
                             ui_civitai_output = gr.Textbox(label="Format", interactive=False, lines=5)
                             with gr.Row():
                                 ui_btn_top20 = gr.Button(t_init.get("btn_top20", ""))
@@ -3922,7 +7225,7 @@ with gr.Blocks(**blocks_kwargs) as app:
             gr.Markdown("---")
             ui_lib_list_title = gr.Markdown(t_init.get("lib_list_title", ""))
             
-            ui_lib_html = gr.HTML(render_lib_html([], "FR"))
+            ui_lib_html = gr.HTML(render_lib_html(initial_library, "FR"))
 
 # ==========================================
 # CÂBLAGE DES ÉVÉNEMENTS
@@ -3930,23 +7233,23 @@ with gr.Blocks(**blocks_kwargs) as app:
 
     lang_radio.change(
         fn=change_language, 
-        inputs=[lang_radio, ui_stats_table, ui_export_config_df, lib_state],
+        inputs=[lang_radio, ui_stats_table, ui_export_config_df, lib_state, ui_strategy_radio],
         outputs=[
             ui_title, ui_settings_acc, ui_guide_acc, ui_guide_text, ui_dataset_drop_zone, ui_browse_btn, ui_load_btn, ui_status_text,
             ui_recipe_global, ui_recipes_dropdown, ui_recipe_name, ui_save_recipe_btn, ui_tracked_words, ui_ai_recipe_count, ui_btn_ai_recipe, ui_btn_analyze_recipe,
-            ui_gallery_title, ui_search_box, ui_multi_select_cb, ui_clear_sel_btn, ui_gallery_cols,
-            ui_toggle_panel_btn, ui_tab_view, ui_btn_prev, ui_btn_next, ui_viewer_shortcuts, ui_toggle_tag_btn,
+            ui_gallery_title, ui_search_box, ui_multi_select_cb, ui_select_all_btn, ui_clear_sel_btn, ui_gallery_cols,
+            ui_toggle_panel_btn, ui_tab_view, ui_btn_prev, ui_btn_next, ui_btn_delete_current, ui_viewer_shortcuts, ui_toggle_tag_btn,
             ui_live_translation_output, ui_save_single_btn,
             ui_trans_module_title, ui_trans_engine, ui_trans_source, ui_trans_target,
             ui_btn_translate_entire_caption, ui_trans_insert_title, ui_trans_input, ui_btn_insert_trans,
             ui_tab_batch, ui_btn_undo, ui_btn_clean_com, ui_btn_clean_dup, ui_preview_table,
-            ui_tab_prep, ui_dup_title, ui_hash_tol, btn_scan_dups, dup_dropdown, btn_del_A, btn_del_B,
-            ui_rename_title, ui_rename_prefix, btn_rename, ui_resize_title, prep_size, prep_format, prep_crop, prep_alpha, prep_dest, btn_prep,
-            ui_tab_ai, ui_ai_conf_title, api_backend, vlm_model, llm_model, ui_ai_adv_acc, api_url_input, ai_temp, ai_ctx, ai_sys,
-            ui_ai_act_title, ai_action_dropdown, ai_template_dd, ai_template_name, btn_save_template, custom_prompt_input, use_vision_for_custom, injection_mode, btn_run_ai, btn_undo_ai,
+            ui_tab_prep, ui_dup_title, prep_hash_algo, ui_hash_tol, ui_hash_tol_help, btn_scan_dups, dup_dropdown, dup_caption_A, dup_caption_B, btn_del_A, btn_skip_dup, btn_del_B, btn_delete_all_b,
+            ui_rename_title, ui_rename_prefix, btn_rename, ui_resize_title, prep_size, prep_format, prep_crop, prep_alpha, prep_dest, btn_prep, prep_min_res, btn_detect_low_res, btn_move_low_res,
+            ui_tab_ai, ui_ai_conf_title, api_backend, vlm_model, llm_model, ui_ai_adv_acc, api_url_input, ai_temp, ai_ctx, api_timeout, ai_sys,
+            ui_ai_act_title, ai_format_preset, ai_action_dropdown, ai_template_dd, ai_template_name, btn_save_template, custom_prompt_input, use_vision_for_custom, injection_mode, ai_injection_note, btn_run_ai, btn_test_ai, btn_select_no_caption, btn_undo_ai,
             ui_bias_title, btn_bias, txt_bias,
             ui_tab_export, ui_exp_edit, ui_btn_up, ui_btn_down, ui_btn_del, ui_quick_prio, ui_quick_target, ui_export_config_df, ui_strategy_radio, ui_max_img_input, ui_export_dir, ui_export_suffix, ui_btn_simul, ui_btn_exp, export_pie, ui_exp_gal,
-            ui_tab_stats, ui_stats_table, ui_btn_civitai, ui_btn_top20, ui_btn_orph, ui_txt_orph, pie_chart, bar_chart,
+            ui_tab_stats, ui_stats_table, ui_btn_civitai, ui_btn_export_stats_csv, ui_btn_export_stats_md, ui_btn_top20, ui_btn_orph, ui_txt_orph, pie_chart, bar_chart,
             ui_adv_stats_title, ui_adv_stats_help, btn_calc_adv, plot_heatmap, ui_heatmap_help, plot_bucket, ui_bucket_help,
             txt_anti, ui_anti_help, txt_contra, ui_contra_help,
             ui_lib_title, ui_lib_mode, ui_lib_target, ui_btn_apply_lib, ui_lib_add_text, ui_btn_add_to_lib, ui_btn_uncheck_all, ui_btn_clear_lib, ui_lib_list_title, ui_lib_html,
@@ -3957,6 +7260,8 @@ with gr.Blocks(**blocks_kwargs) as app:
             ui_lm_studio_acc, ui_lm_studio_list_btn, ui_lm_studio_vlm_dd, ui_lm_studio_llm_dd, ui_lm_studio_shared_dd,
             ui_lm_studio_load_vlm, ui_lm_studio_load_llm, ui_lm_studio_load_shared,
             ui_lm_studio_unload_vlm, ui_lm_studio_unload_llm, ui_lm_studio_unload_shared, ui_lm_studio_save_choices,
+            # Nouveaux v4.4
+            ui_recent_paths_dd, ui_csv_acc, ui_csv_hint, ui_btn_export_csv_captions, ui_btn_import_csv_captions,
         ]
     )
 
@@ -3992,11 +7297,16 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_gallery_cols.change(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery])
     ui_gallery_cols.release(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery])
 
-    ui_load_btn.click(fn=load_dataset, inputs=[dir_input, ui_sort_order, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state])
+    ui_recent_paths_dd.change(fn=lambda p: gr.update(value=p) if p else gr.update(), inputs=[ui_recent_paths_dd], outputs=[dir_input])
+    ui_load_btn.click(fn=load_dataset, inputs=[dir_input, ui_sort_order, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state]).success(
+        fn=show_first_after_dataset_load,
+        inputs=[filtered_state, ui_tracked_words, lang_radio],
+        outputs=[current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status],
+    ).success(fn=lambda p: gr.update(choices=load_recent_paths(), value=None), inputs=[dir_input], outputs=[ui_recent_paths_dd])
     ui_search_box.change(fn=filter_gallery, inputs=[dataset_state, ui_search_box, ui_sort_order, lang_radio], outputs=[filtered_state, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, current_idx_state])
     ui_sort_order.change(fn=filter_gallery, inputs=[dataset_state, ui_search_box, ui_sort_order, lang_radio], outputs=[filtered_state, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, current_idx_state])
     
-    live_translation_inputs = [current_caption, ui_trans_engine, ui_trans_target, api_backend, api_url_input, llm_model, lang_radio, api_key_input]
+    live_translation_inputs = [current_caption, ui_trans_engine, ui_trans_target, api_backend, api_url_input, llm_model, lang_radio, api_key_input, api_timeout]
 
     ui_hidden_sync_btn.click(
         fn=handle_sync,
@@ -4028,10 +7338,33 @@ with gr.Blocks(**blocks_kwargs) as app:
         outputs=[ui_live_translation_output],
         show_progress="hidden",
     )
-    ui_save_single_btn.click(fn=save_single_caption, inputs=[dataset_state, filtered_state, current_idx_state, current_caption, lang_radio], outputs=[dataset_state, filtered_state, ui_single_save_status])
-    ui_clear_sel_btn.click(fn=clear_selection, inputs=[lang_radio], outputs=[selected_indices_state, ui_selection_status, ui_hidden_sync_input])
+    js_confirm_delete_current = "(...args) => { if (!confirm('⚠️ Supprimer cette image définitivement ? / Delete this image permanently?')) throw new Error('Annulé.'); return args; }"
+    delete_current_outputs = [
+        dataset_state, filtered_state, gallery, current_img, highlight_preview, current_caption,
+        word_counter, ui_viewer_status, current_idx_state, selected_indices_state,
+        ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input,
+    ]
+    ui_btn_delete_current.click(
+        fn=delete_current_image,
+        js=js_confirm_delete_current,
+        inputs=[dataset_state, filtered_state, current_idx_state, ui_tracked_words, lang_radio],
+        outputs=delete_current_outputs,
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    ui_hidden_delete_current_btn.click(
+        fn=delete_current_image,
+        inputs=[dataset_state, filtered_state, current_idx_state, ui_tracked_words, lang_radio],
+        outputs=delete_current_outputs,
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    ui_save_single_btn.click(fn=save_single_caption, inputs=[dataset_state, filtered_state, current_idx_state, current_caption, lang_radio], outputs=[dataset_state, filtered_state, ui_single_save_status]).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    ui_clear_sel_btn.click(
+        fn=clear_selection,
+        js="function(...args){ if(window.clearGallerySelection) window.clearGallerySelection(); return args; }",
+        inputs=[dataset_state, filtered_state, lang_radio],
+        outputs=[selected_indices_state, ui_selection_status, ui_hidden_sync_input],
+    )
+    ui_select_all_btn.click(fn=None, js="function(){ if(window.selectAllGallery) window.selectAllGallery(); return []; }")
 
-    current_caption.input(
+    ui_hidden_live_translation_btn.click(
         fn=do_live_translation,
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
@@ -4040,18 +7373,27 @@ with gr.Blocks(**blocks_kwargs) as app:
         concurrency_limit=1,
         concurrency_id="live_translation",
     )
+    ui_hidden_reverse_translation_btn.click(
+        fn=reverse_live_translation,
+        inputs=[ui_live_translation_output, ui_trans_engine, ui_trans_target, api_backend, api_url_input, llm_model, ui_tracked_words, lang_radio, api_key_input, api_timeout],
+        outputs=[current_caption, highlight_preview, word_counter],
+        show_progress="hidden",
+        trigger_mode="always_last",
+        concurrency_limit=1,
+        concurrency_id="reverse_live_translation",
+    )
     
     ui_btn_translate_entire_caption.click(
         fn=translate_entire_caption_action, 
-        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, ui_tracked_words, lang_radio, api_key_input], 
+        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, ui_tracked_words, lang_radio, api_key_input, api_timeout],
         outputs=[dataset_state, filtered_state, current_caption, highlight_preview, word_counter, ui_single_save_status]
     ).success(
         fn=do_live_translation,
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
         show_progress="hidden",
-    )
-    ui_btn_insert_trans.click(fn=trans_insert, inputs=[ui_trans_input, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, lang_radio, api_key_input], outputs=[current_caption]).success(fn=lambda: "", outputs=[ui_trans_input]).success(
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    ui_btn_insert_trans.click(fn=trans_insert, inputs=[ui_trans_input, current_caption, ui_trans_engine, ui_trans_source, api_backend, api_url_input, llm_model, lang_radio, api_key_input, api_timeout], outputs=[current_caption]).success(fn=lambda: "", outputs=[ui_trans_input]).success(
         fn=do_live_translation,
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
@@ -4060,6 +7402,8 @@ with gr.Blocks(**blocks_kwargs) as app:
 
     js_confirm_batch = "(...args) => { if (!confirm('⚠️ Appliquer cette modification en masse sur la sélection ? / Apply this mass modification to the selection?')) throw new Error('Annulé.'); return args; }"
     js_confirm_undo = "(...args) => { if (!confirm('⚠️ Annuler la dernière action ? / Undo the last action?')) throw new Error('Annulé.'); return args; }"
+    js_confirm_dup = "(...args) => { if (!confirm('⚠️ Supprimer ce fichier définitivement ? / Delete this file permanently?')) throw new Error('Annulé.'); return args; }"
+    js_confirm_all_b = "(...args) => { if (!confirm('⚠️ Supprimer automatiquement tous les fichiers B détectés ? / Automatically delete every detected B file?')) throw new Error('Annulé.'); return args; }"
     
     ui_btn_add_to_lib.click(fn=add_to_lib_html, inputs=[ui_lib_add_text, lib_state, lang_radio], outputs=[ui_lib_html, lib_state, ui_lib_add_text])
     ui_hidden_lib_toggle_btn.click(fn=toggle_lib_item, inputs=[ui_hidden_lib_toggle_input, lib_state, lang_radio], outputs=[ui_lib_html, lib_state])
@@ -4072,7 +7416,7 @@ with gr.Blocks(**blocks_kwargs) as app:
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
         show_progress="hidden",
-    )
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
 
     js_get_sel = "function(tracker, dummy) { let sel = window.getSelection().toString().trim(); if(!sel) { let ae = document.activeElement; if(ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT')) sel = ae.value.substring(ae.selectionStart, ae.selectionEnd).trim(); } return [tracker, sel || \"\"]; }"
     ui_hidden_calc_btn.click(fn=analyze_dataset, inputs=[dataset_state, ui_tracked_words, lang_radio], outputs=[pie_chart, bar_chart, ui_stats_table, stats_df_state, ui_export_config_df, config_df_state, ui_stats_status])
@@ -4083,7 +7427,7 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_save_recipe_btn.click(fn=save_recipe, inputs=[ui_recipe_name, ui_tracked_words], outputs=[ui_recipes_dropdown, ui_status_text])
     ui_btn_ai_recipe.click(
         fn=auto_fill_recipe_from_ai,
-        inputs=[dataset_state, ui_ai_recipe_count, api_backend, api_url_input, llm_model, ai_temp, ai_ctx, ai_sys, lang_radio, api_key_input],
+        inputs=[dataset_state, ui_ai_recipe_count, api_backend, api_url_input, llm_model, ai_temp, ai_ctx, ai_sys, lang_radio, api_key_input, api_timeout],
         outputs=[ui_tracked_words, ui_status_text],
     ).success(
         fn=None,
@@ -4096,19 +7440,19 @@ with gr.Blocks(**blocks_kwargs) as app:
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
         show_progress="hidden",
-    )
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
     ui_btn_clean_com.click(fn=batch_clean_commas, js=js_confirm_batch, inputs=[dataset_state, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter]).success(
         fn=do_live_translation,
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
         show_progress="hidden",
-    )
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
     ui_btn_clean_dup.click(fn=batch_remove_duplicates, js=js_confirm_batch, inputs=[dataset_state, selected_indices_state, ui_search_box, current_idx_state, ui_tracked_words, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_batch_status, ui_preview_table, current_caption, highlight_preview, word_counter]).success(
         fn=do_live_translation,
         inputs=live_translation_inputs,
         outputs=[ui_live_translation_output],
         show_progress="hidden",
-    )
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
 
     ui_export_config_df.select(fn=get_row_index, inputs=[config_df_state], outputs=[recipe_selected_row, ui_quick_prio, ui_quick_target])
     ui_quick_prio.change(fn=apply_quick_prio, inputs=[ui_quick_prio, recipe_selected_row, config_df_state], outputs=[ui_export_config_df, config_df_state, ui_tracked_words, recipe_selected_row])
@@ -4120,8 +7464,15 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_export_config_df.change(fn=handle_recipe_df_safe, inputs=[ui_export_config_df, config_df_state, ui_tracked_words], outputs=[ui_export_config_df, config_df_state, ui_tracked_words])
 
     ui_btn_civitai.click(fn=generate_civitai_format, inputs=[ui_stats_table], outputs=[ui_civitai_output])
+    ui_btn_export_stats_csv.click(fn=export_stats_csv, inputs=[ui_stats_table, lang_radio], outputs=[ui_stats_export_file, ui_stats_status])
+    ui_btn_export_stats_md.click(fn=export_stats_md, inputs=[ui_stats_table, lang_radio], outputs=[ui_stats_export_file, ui_stats_status])
     ui_btn_top20.click(fn=auto_fill_top_tags, inputs=[dataset_state], outputs=[ui_tracked_words]).success(fn=None, js="function(){ setTimeout(()=>document.getElementById('hidden_calc_btn')?.click(), 100); }")
     ui_btn_orph.click(fn=find_orphans, inputs=[dataset_state, lang_radio], outputs=[ui_txt_orph])
+    ui_stats_table.select(
+        fn=filter_gallery_from_stats_row,
+        inputs=[ui_stats_table, dataset_state, ui_sort_order, lang_radio],
+        outputs=[ui_search_box, filtered_state, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, current_idx_state],
+    )
     ui_stats_table.change(fn=handle_stats_df_safe, inputs=[ui_stats_table, stats_df_state, ui_tracked_words], outputs=[ui_stats_table, stats_df_state, ui_tracked_words]).success(fn=None, js="function(){ setTimeout(()=>document.getElementById('hidden_calc_btn')?.click(), 100); }")
     btn_calc_adv.click(fn=update_advanced_stats, inputs=[dataset_state], outputs=[plot_heatmap, plot_bucket, txt_anti, txt_contra])
 
@@ -4131,14 +7482,118 @@ with gr.Blocks(**blocks_kwargs) as app:
         outputs=[ui_export_status, export_gallery, export_pie, bar_chart, selected_indices_state, ui_selection_status, ui_hidden_sync_input],
     )
     ui_btn_exp.click(fn=simulate_and_export, inputs=[dataset_state, ui_export_dir, ui_export_suffix, ui_export_config_df, gr.State(False), selected_indices_state, ui_strategy_radio, ui_max_img_input, lang_radio], outputs=[ui_export_status, export_gallery, export_pie, bar_chart])
-    btn_scan_dups.click(fn=scan_duplicates_advanced, inputs=[dataset_state, ui_hash_tol], outputs=[dup_dropdown, dup_mapping_state])
-    dup_dropdown.change(fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state], outputs=[dup_img_A, dup_img_B, dup_idA, dup_idB])
-    btn_del_A.click(fn=delete_duplicate, inputs=[dataset_state, filtered_state, dup_idA, dup_dropdown, dup_mapping_state], outputs=[dataset_state, filtered_state, dup_dropdown, dup_mapping_state, dup_status])
-    btn_del_B.click(fn=delete_duplicate, inputs=[dataset_state, filtered_state, dup_idB, dup_dropdown, dup_mapping_state], outputs=[dataset_state, filtered_state, dup_dropdown, dup_mapping_state, dup_status])
-    btn_rename.click(fn=batch_rename_dataset, inputs=[dataset_state, ui_rename_prefix], outputs=[dataset_state, prep_status])
-    btn_prep.click(fn=batch_process_images, inputs=[dataset_state, prep_dest, prep_size, prep_format, prep_crop, prep_alpha], outputs=[prep_status])
+    selected_indices_state.change(fn=update_prep_button_label, inputs=[selected_indices_state, lang_radio], outputs=[btn_prep])
+    prep_summary_inputs = [dataset_state, selected_indices_state, prep_dest, prep_size, prep_format, prep_crop, prep_alpha, lang_radio]
+    for prep_summary_component in [selected_indices_state, dataset_state, prep_dest, prep_size, prep_format, prep_crop, prep_alpha, lang_radio]:
+        prep_summary_component.change(fn=prep_workflow_summary, inputs=prep_summary_inputs, outputs=[prep_quick_summary])
+    prep_preset.change(
+        fn=apply_prep_workflow_preset,
+        inputs=[prep_preset],
+        outputs=[prep_size, prep_format, prep_crop, prep_alpha, prep_dest],
+    ).success(fn=prep_workflow_summary, inputs=prep_summary_inputs, outputs=[prep_quick_summary])
+    btn_apply_prep_preset.click(
+        fn=apply_prep_workflow_preset,
+        inputs=[prep_preset],
+        outputs=[prep_size, prep_format, prep_crop, prep_alpha, prep_dest],
+    ).success(fn=prep_workflow_summary, inputs=prep_summary_inputs, outputs=[prep_quick_summary])
+    duplicate_pair_outputs = [dup_img_A, dup_img_B, dup_idA, dup_idB, dup_caption_A, dup_caption_B, dup_recommendation]
+    btn_scan_dups.click(fn=scan_duplicates_advanced, inputs=[dataset_state, ui_hash_tol, prep_hash_algo], outputs=[dup_dropdown, dup_mapping_state]).success(
+        fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs
+    )
+    dup_dropdown.change(fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs)
+    btn_skip_dup.click(fn=skip_duplicate, inputs=[dup_dropdown, dup_mapping_state], outputs=[dup_dropdown, dup_mapping_state, dup_status]).success(
+        fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs
+    )
+    btn_del_A.click(fn=delete_duplicate, js=js_confirm_dup, inputs=[dataset_state, filtered_state, dup_idA, dup_dropdown, dup_mapping_state, lang_radio], outputs=[dataset_state, filtered_state, gallery, dup_dropdown, dup_mapping_state, dup_status]).success(
+        fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_del_B.click(fn=delete_duplicate, js=js_confirm_dup, inputs=[dataset_state, filtered_state, dup_idB, dup_dropdown, dup_mapping_state, lang_radio], outputs=[dataset_state, filtered_state, gallery, dup_dropdown, dup_mapping_state, dup_status]).success(
+        fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_delete_recommended_dup.click(fn=delete_recommended_duplicate, js=js_confirm_dup, inputs=[dataset_state, filtered_state, dup_dropdown, dup_mapping_state, lang_radio], outputs=[dataset_state, filtered_state, gallery, dup_dropdown, dup_mapping_state, dup_status]).success(
+        fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_delete_all_b.click(fn=delete_all_duplicates_b, js=js_confirm_all_b, inputs=[dataset_state, filtered_state, dup_mapping_state, lang_radio], outputs=[dataset_state, filtered_state, gallery, dup_dropdown, dup_mapping_state, dup_status]).success(
+        fn=load_duplicate_pair, inputs=[dup_dropdown, dup_mapping_state, dataset_state, lang_radio], outputs=duplicate_pair_outputs
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_rename.click(fn=batch_rename_dataset, inputs=[dataset_state, ui_rename_prefix], outputs=[dataset_state, prep_status]).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_prep.click(fn=batch_process_images, inputs=[dataset_state, selected_indices_state, prep_dest, prep_size, prep_format, prep_crop, prep_alpha], outputs=[prep_status], show_progress="full")
+    btn_load_manual_crop.click(fn=load_manual_crop_image, inputs=[filtered_state, current_idx_state, lang_radio], outputs=[manual_crop_editor, manual_crop_status]).success(
+        fn=None,
+        js="function(){ requestAnimationFrame(()=>window.idrManualCropLoadFromEditor && window.idrManualCropLoadFromEditor()); return []; }",
+    )
+    btn_save_manual_crop.click(
+        fn=save_manual_crop_image,
+        inputs=[manual_crop_editor, filtered_state, current_idx_state, prep_dest, prep_size, prep_format, prep_alpha, lang_radio],
+        outputs=[manual_crop_status],
+        show_progress="full",
+    )
+    manual_crop_nav_outputs = [manual_crop_editor, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status, manual_crop_status]
+    btn_manual_crop_prev.click(
+        fn=manual_crop_jump,
+        inputs=[filtered_state, current_idx_state, gr.State("prev"), ui_tracked_words, lang_radio],
+        outputs=manual_crop_nav_outputs,
+    ).success(fn=None, js="function(){ requestAnimationFrame(()=>window.idrManualCropLoadFromEditor && window.idrManualCropLoadFromEditor()); return []; }")
+    btn_manual_crop_next.click(
+        fn=manual_crop_jump,
+        inputs=[filtered_state, current_idx_state, gr.State("next"), ui_tracked_words, lang_radio],
+        outputs=manual_crop_nav_outputs,
+    ).success(fn=None, js="function(){ requestAnimationFrame(()=>window.idrManualCropLoadFromEditor && window.idrManualCropLoadFromEditor()); return []; }")
+    btn_save_manual_crop_next.click(
+        fn=save_manual_crop_and_next,
+        inputs=[manual_crop_editor, filtered_state, current_idx_state, prep_dest, prep_size, prep_format, prep_alpha, ui_tracked_words, lang_radio],
+        outputs=[manual_crop_editor, manual_crop_status, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status],
+        show_progress="full",
+    ).success(fn=None, js="function(){ requestAnimationFrame(()=>window.idrManualCropLoadFromEditor && window.idrManualCropLoadFromEditor()); return []; }")
+    ui_hidden_manual_crop_btn.click(
+        fn=overwrite_manual_crop_from_payload,
+        inputs=[ui_hidden_manual_crop_payload, dataset_state, filtered_state, current_idx_state, ui_tracked_words, lang_radio],
+        outputs=[dataset_state, filtered_state, gallery, current_img, highlight_preview, current_caption, word_counter, current_idx_state, manual_crop_status],
+    ).success(
+        fn=None,
+        js="function(){ requestAnimationFrame(()=>window.idrManualCropLoadFromEditor && window.idrManualCropLoadFromEditor()); return []; }",
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_detect_low_res.click(fn=detect_low_resolution_images, inputs=[dataset_state, prep_min_res, lang_radio], outputs=[low_res_df, prep_status])
+    btn_move_low_res.click(fn=move_low_resolution_images, inputs=[dataset_state, filtered_state, prep_min_res, lang_radio], outputs=[dataset_state, filtered_state, gallery, low_res_df, prep_status, selected_indices_state, ui_selection_status, ui_hidden_sync_input]).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
 
-    ai_action_dropdown.change(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group])
+    ai_action_dropdown.change(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group]).success(
+        fn=load_ai_action_for_edit,
+        inputs=[ai_action_dropdown],
+        outputs=[ai_action_edit_name, ai_action_edit_prompt, ai_action_edit_desc, ai_action_edit_vision, ai_action_edit_injection, ai_actions_manage_status],
+    )
+    ai_format_preset.change(
+        fn=apply_ai_format_preset,
+        inputs=[ai_format_preset],
+        outputs=[ai_action_dropdown, custom_prompt_input, injection_mode, use_vision_for_custom],
+    ).success(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group]).success(
+        fn=load_ai_action_for_edit,
+        inputs=[ai_action_dropdown],
+        outputs=[ai_action_edit_name, ai_action_edit_prompt, ai_action_edit_desc, ai_action_edit_vision, ai_action_edit_injection, ai_actions_manage_status],
+    )
+    btn_save_ai_action.click(
+        fn=save_custom_ai_action,
+        inputs=[ai_action_edit_name, ai_action_edit_prompt, ai_action_edit_desc, ai_action_edit_vision, ai_action_edit_injection],
+        outputs=[ai_action_dropdown, ai_actions_manage_status],
+    ).success(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group]).success(
+        fn=load_ai_action_for_edit,
+        inputs=[ai_action_dropdown],
+        outputs=[ai_action_edit_name, ai_action_edit_prompt, ai_action_edit_desc, ai_action_edit_vision, ai_action_edit_injection, ai_actions_manage_status],
+    )
+    btn_delete_ai_action.click(
+        fn=delete_custom_ai_action,
+        inputs=[ai_action_edit_name],
+        outputs=[ai_action_dropdown, ai_actions_manage_status],
+    ).success(fn=update_ai_action_desc, inputs=[ai_action_dropdown], outputs=[ai_action_desc, custom_prompt_group, injection_group]).success(
+        fn=load_ai_action_for_edit,
+        inputs=[ai_action_dropdown],
+        outputs=[ai_action_edit_name, ai_action_edit_prompt, ai_action_edit_desc, ai_action_edit_vision, ai_action_edit_injection, ai_actions_manage_status],
+    )
+    btn_import_ai_actions.click(
+        fn=import_ai_actions_json,
+        inputs=[ai_actions_import_file],
+        outputs=[ai_action_dropdown, ai_actions_manage_status],
+    )
+    btn_export_ai_actions.click(fn=export_ai_actions_json, inputs=[], outputs=[ai_actions_export_file, ai_actions_manage_status])
 
     def _switch_backend_url(backend):
         """Bascule l'URL par défaut quand on change de backend.
@@ -4152,29 +7607,48 @@ with gr.Blocks(**blocks_kwargs) as app:
             return gr.update(value=DEFAULT_GEMINI_URL)
         return gr.update(value=DEFAULT_LM_STUDIO_URL)
 
-    ai_settings_inputs = [api_backend, vlm_model, llm_model, api_url_input, api_key_input, ai_temp, ai_ctx, ai_sys]
+    ai_settings_inputs = [api_backend, vlm_model, llm_model, api_url_input, api_key_input, ai_temp, ai_ctx, api_timeout, ai_sys]
     api_backend.change(fn=_switch_backend_url, inputs=[api_backend], outputs=[api_url_input]).success(
         fn=save_ai_settings, inputs=ai_settings_inputs, outputs=None,
     )
-    for ai_setting_component in [vlm_model, llm_model, api_url_input, api_key_input, ai_temp, ai_ctx, ai_sys]:
+    for ai_setting_component in [vlm_model, llm_model, api_url_input, api_key_input, ai_temp, ai_ctx, api_timeout, ai_sys]:
         ai_setting_component.change(fn=save_ai_settings, inputs=ai_settings_inputs, outputs=None)
     ai_template_dd.change(fn=apply_ai_recipe, inputs=[ai_template_dd], outputs=[custom_prompt_input])
     btn_save_template.click(fn=save_ai_recipe, inputs=[ai_template_name, custom_prompt_input], outputs=[ai_template_dd])
+    ai_action_inputs = [
+        dataset_state, selected_indices_state, ui_search_box, ai_action_dropdown,
+        custom_prompt_input, injection_mode, use_vision_for_custom, vlm_model, llm_model,
+        api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, current_idx_state,
+        ui_tracked_words, lang_radio, api_key_input, api_timeout,
+    ]
+    ai_action_outputs = [dataset_state, filtered_state, history_state, ai_status, ui_hidden_tags_input, current_caption, highlight_preview, word_counter]
     btn_run_ai.click(
         fn=process_ai_action,
+        inputs=ai_action_inputs,
+        outputs=ai_action_outputs,
+        show_progress="full",
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_test_ai.click(
+        fn=process_ai_current_image,
         inputs=[
-            dataset_state, selected_indices_state, ui_search_box, ai_action_dropdown,
+            dataset_state, filtered_state, ui_search_box, ai_action_dropdown,
             custom_prompt_input, injection_mode, use_vision_for_custom, vlm_model, llm_model,
             api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, current_idx_state,
-            ui_tracked_words, lang_radio, api_key_input,
+            ui_tracked_words, lang_radio, api_key_input, api_timeout,
         ],
-        outputs=[dataset_state, filtered_state, history_state, ai_status, ui_hidden_tags_input, current_caption, highlight_preview, word_counter],
+        outputs=ai_action_outputs,
+        show_progress="full",
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+    btn_select_no_caption.click(
+        fn=select_images_without_caption,
+        inputs=[dataset_state, filtered_state, lang_radio],
+        outputs=[selected_indices_state, ui_selection_status, ui_hidden_sync_input],
     )
     btn_bias.click(
         fn=analyze_bias,
-        inputs=[dataset_state, llm_model, api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, lang_radio, api_key_input],
+        inputs=[dataset_state, llm_model, api_backend, api_url_input, ai_temp, ai_ctx, ai_sys, lang_radio, api_key_input, api_timeout],
         outputs=[txt_bias],
-    )
+    ).success(fn=lambda: "", outputs=[bias_stale_notice])
 
     # 🎯 LM Studio : Rafraîchissement et chargement
     ui_lm_studio_list_btn.click(
@@ -4184,7 +7658,7 @@ with gr.Blocks(**blocks_kwargs) as app:
     )
     lm_studio_choice_inputs = [
         ui_lm_studio_vlm_dd, ui_lm_studio_llm_dd, ui_lm_studio_shared_dd,
-        api_backend, api_url_input, api_key_input, ai_temp, ai_ctx, ai_sys, lang_radio,
+        api_backend, api_url_input, api_key_input, ai_temp, ai_ctx, api_timeout, ai_sys, lang_radio,
     ]
     ui_lm_studio_load_vlm.click(
         fn=lm_studio_load_model,
@@ -4242,7 +7716,15 @@ with gr.Blocks(**blocks_kwargs) as app:
     # ⭐ Favoris : ajout, retrait, sélection
     ui_btn_add_fav.click(fn=add_favorite, inputs=[dir_input, lang_radio], outputs=[ui_fav_dropdown, ui_status_text])
     ui_btn_remove_fav.click(fn=remove_favorite, inputs=[ui_fav_dropdown, lang_radio], outputs=[ui_fav_dropdown, ui_status_text])
-    ui_fav_dropdown.change(fn=pick_favorite, inputs=[ui_fav_dropdown, lang_radio], outputs=[dir_input])
+    ui_fav_dropdown.change(
+        fn=load_favorite_dataset,
+        inputs=[ui_fav_dropdown, ui_sort_order, lang_radio],
+        outputs=[dir_input, dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state],
+    ).success(
+        fn=show_first_after_dataset_load,
+        inputs=[filtered_state, ui_tracked_words, lang_radio],
+        outputs=[current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status],
+    )
 
     # 🗑️ Suppression de recette
     ui_btn_delete_recipe.click(
@@ -4259,7 +7741,42 @@ with gr.Blocks(**blocks_kwargs) as app:
         outputs=[ui_lang_import_status],
     )
 
-    app.load(fn=lambda: None, inputs=None, outputs=None, js=custom_js)
+    # 📋 Export / Import CSV captions
+    ui_btn_export_csv_captions.click(
+        fn=export_captions_csv,
+        js="function(...args){ document.getElementById('gallery_csv_acc')?.classList.remove('csv-import-open'); return args; }",
+        inputs=[dataset_state, lang_radio],
+        outputs=[ui_csv_status],
+    )
+    ui_btn_export_md_captions.click(
+        fn=export_captions_md,
+        js="function(...args){ document.getElementById('gallery_csv_acc')?.classList.remove('csv-import-open'); return args; }",
+        inputs=[dataset_state, lang_radio],
+        outputs=[ui_csv_status],
+    )
+    ui_btn_import_csv_captions.click(
+        fn=None,
+        js="function(){ const acc = document.getElementById('gallery_csv_acc'); acc?.classList.add('csv-import-open'); return []; }",
+    )
+    ui_btn_import_md_captions.click(
+        fn=None,
+        js="function(){ const acc = document.getElementById('gallery_csv_acc'); acc?.classList.add('csv-import-open'); return []; }",
+    )
+    ui_csv_import_file.upload(
+        fn=import_captions_file,
+        inputs=[ui_csv_import_file, dataset_state, lang_radio],
+        outputs=[dataset_state, ui_csv_status],
+    ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
+
+    # Ctrl+D : copier la caption vers l'image suivante
+    copy_next_outputs = [dataset_state, filtered_state, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status]
+    ui_hidden_copy_next_btn.click(
+        fn=copy_caption_to_next,
+        inputs=[dataset_state, filtered_state, current_idx_state, current_caption, ui_tracked_words, lang_radio],
+        outputs=copy_next_outputs,
+    ).success(fn=do_live_translation, inputs=live_translation_inputs, outputs=[ui_live_translation_output], show_progress="hidden")
+
+    app.load(fn=None, inputs=None, outputs=None, js=custom_js)
 
 if __name__ == "__main__":
     launch_kwargs = {
@@ -4269,6 +7786,7 @@ if __name__ == "__main__":
     }
     if get_gradio_major_version() >= 6:
         launch_kwargs["css"] = css_code
+        launch_kwargs["js"] = f"({custom_js})();"
     try:
         app.launch(**launch_kwargs)
     except TypeError:

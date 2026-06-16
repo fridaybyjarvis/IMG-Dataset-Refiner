@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  IMG Dataset Refiner v4.1 Pro - Installation
+REM  IMG Dataset Refiner v4.4.6 Pro - Installation
 REM  Installe Python (verification) + dependances dans un venv local
 REM ============================================================
 

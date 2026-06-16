@@ -1,0 +1,3 @@
+# Optional precision helpers.
+# The app starts without these packages and falls back gracefully.
+tiktoken

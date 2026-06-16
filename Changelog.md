@@ -1,5 +1,377 @@
 # **📝 Changelog \- IMG Dataset Refiner**
 
+## **v4.4.6 Pro — Finalisation UI premium, crop rapide, captions CSV/MD et traduction bidirectionnelle**
+
+Grosse passe de finition orientée usage quotidien : interface plus compacte, galerie stabilisée, pré-traitement plus confortable, import/export captions plus simple et traduction live utilisable dans les deux sens.
+
+### **🎨 UI premium et densité**
+
+* Le thème sombre premium est consolidé sur l'ensemble de l'application : header, workbench, onglets, galerie, viewer, assistant IA, pré-traitement et bibliothèque de mots.
+* Le bloc titre/dataset est réaligné : champ chemin, bouton Browse, drop-zone, bouton Load et statut sont plus compacts et mieux alignés.
+* Le panneau Paramètres reste en fenêtre flottante compacte au lieu d'étirer le header.
+* Le panneau `📚 Word Library (Mass Batch)` utilise maintenant une couleur harmonisée avec la palette globale.
+* Les boutons et zones d'action ont été resserrés pour réduire les espaces vides sans perdre en lisibilité.
+
+### **⭐ Chargement dataset, favoris et langue**
+
+* Le menu Favoris n'est plus pré-sélectionné au démarrage, afin qu'un clic sur une adresse déclenche toujours le chargement.
+* Cliquer un favori charge directement le dataset choisi et garde le champ chemin synchronisé.
+* La langue par défaut côté serveur est l'anglais pour les nouveaux utilisateurs, avec bascule automatique vers FR si le navigateur est en français.
+* La première image du dataset s'affiche automatiquement dans le viewer après chargement, pour éviter un écran central vide.
+
+### **🖼️ Galerie & Sélection**
+
+* Le panneau Galerie reste en colonne sans `flex-wrap`, ce qui empêche les contrôles de partir horizontalement hors du volet.
+* Le panneau Galerie est sticky en desktop, prend toute la hauteur utile du viewport et peut être redimensionné horizontalement.
+* Les miniatures n'ont plus de padding interne et remplissent leur tuile en mode `cover`.
+* Les actions de sélection sont regroupées et réparées : multi-select, select all et clear fonctionnent à nouveau.
+* Les contrôles de tri et sélection sont plus compacts et moins envahissants.
+* Le module `Import / Export CSV/MD` est placé dans `Galerie & Sélection`, au plus près du dataset visible.
+
+### **📋 Import / Export captions CSV et Markdown**
+
+* L'export CSV écrit maintenant directement dans le dossier du dataset chargé.
+* L'export ne laisse plus de spinner Gradio décoratif après génération.
+* L'import CSV passe par un drop-zone/fichier dédié au clic sur `Import filled CSV`.
+* Ajout d'un export/import Markdown `.md` avec les mêmes 3 données que le CSV : numéro, fichier, caption.
+* Le drop-zone d'import accepte CSV et Markdown, puis applique les captions par correspondance de nom de fichier.
+
+### **💡 Traduction live bidirectionnelle**
+
+* La traduction live se rafraîchit pendant la frappe dans le caption original.
+* Le champ `💡 Live Translation` est maintenant éditable : modifier la traduction retraduit vers l'anglais et met à jour le caption original.
+* Des ponts JS cachés déclenchent les traductions sans attendre le blur ou la sauvegarde.
+* La traduction inverse Google est optimisée en traduction bloc + cache, au lieu de traduire chaque fragment séparé par virgule.
+
+### **✂️ Pré-traitement, PNG et crop manuel**
+
+* Le panneau `Pre-processing & Duplicates` est réorganisé pour être plus lisible et plus rapide à utiliser.
+* Le format d'export du pré-traitement propose maintenant `PNG` en plus de `WebP` et `JPEG`.
+* Ajout d'un outil `Manual crop (image by image)` avec prévisualisation canvas.
+* Ratios prédéfinis ou crop libre : `Free`, `1:1`, `4:5`, `3:4`, `16:9`.
+* En mode ratio fixe, le cadre reste centré et l'image glisse dessous ; la molette zoome/dézoome.
+* Raccourcis du crop manuel :
+  * `←` / `→` : image précédente / suivante;
+  * `↑` / `↓` : inverser portrait/paysage;
+  * `Entrée` : écraser l'image courante et passer à la suivante.
+* `Overwrite current image` applique le crop immédiatement, sans confirmation bloquante.
+
+### **🤖 Assistant IA**
+
+* La zone `Caption format preset` est mieux séparée de `AI Action` pour limiter la confusion.
+* Les actions IA peuvent maintenant être chargées pour édition, modifiées, sauvegardées ou supprimées.
+* Possibilité de créer de nouvelles actions IA personnalisées avec prompt, description, mode vision et mode d'injection.
+* Import/export JSON des actions IA personnalisées.
+* Les actions personnalisées sont stockées dans `ai_recipes.json` sous `__custom_actions__`.
+* `AI Dataset Profiling` compacte automatiquement son prompt selon le contexte IA disponible, ce qui évite les erreurs LM Studio/OpenAI-compatible de type `n_keep >= n_ctx` sur les modèles chargés en 4096 tokens.
+
+### **🔁 Compatibilité et stabilité**
+
+* Les composants cachés nécessaires aux ponts JS restent dans le DOM et sont masqués par CSS.
+* Les IDs sensibles des panels, de la galerie, du crop manuel et des ponts JS sont conservés.
+* `tools/release_check.py` passe : compilation, langues FR/EN, import module, `change_language` et fallback `tiktoken`.
+
+## **v4.4.5 Pro — Correctifs finition UI**
+
+Passe de correction sur les regressions visibles de la refonte compacte.
+
+### **⭐ Favoris**
+
+* Cliquer un favori charge maintenant directement le dataset choisi, tout en mettant le champ chemin à jour.
+
+### **🧩 Interface**
+
+* La zone de saisie de la recette globale est redimensionnable verticalement.
+* Le panneau Paramètres s'ouvre en fenêtre flottante compacte au lieu d'etirer le bloc titre/dataset.
+* Le statut vide `...` devant la galerie est supprimé.
+* Le placeholder `...` du visualiseur est supprimé.
+* Le panneau CSV de la galerie est resserré pour éviter l'ouverture sur une grande zone vide.
+
+## **v4.4.4 Pro — Correctif densité thème**
+
+Correction des premiers défauts visuels apparus après la version compacte.
+
+### **🧱 Encarts du haut**
+
+* Le panneau titre/dataset exploite mieux la largeur : titre et paramètres sont maintenant côte à côte.
+* Le bloc chemin/récents/drop-zone est réaligné en haut, au lieu de créer un vide vertical dans la colonne drop-zone.
+* Les paddings internes des deux encarts supérieurs sont réduits pour garder le workbench plus haut dans la page.
+
+### **📊 Recette globale**
+
+* Les contrôles de recette sont resserrés par CSS : moins de hauteur artificielle dans les blocs Gradio.
+* La zone des mots-clés suivis est plus compacte.
+* Le responsive mobile n'impose plus de scroll interne dans les deux encarts du haut.
+* Les libellés des boutons de recette IA sont raccourcis pour éviter les retours de ligne dans les vues étroites.
+
+### **🔁 Compatibilité et stabilité**
+
+* Les IDs de pont JS et les callbacks ne changent pas.
+* Aucun changement sur `app.load`, `Gallery` au chargement ou la logique métier.
+
+## **v4.4.3 Pro — UI premium compacte**
+
+Passe de densification sur la refonte premium pour afficher plus d'outils utiles sans perdre la colorimétrie.
+
+### **🧩 Layout**
+
+* Le panneau de chargement est organisé en zones côte à côte : chemin/récents/favoris à gauche, drop-zone et bouton de chargement à droite.
+* Le panneau Recette globale utilise des rows plus compactes et des boutons moins étalés.
+* Le module **Import / Export CSV (Captioning IA)** est déplacé dans **Galerie & Sélection**, où il correspond mieux au workflow dataset visible.
+
+### **☑️ Sélection**
+
+* `Sélection Multiple`, `Tout sélectionner` et `Effacer` sont regroupés dans une toolbar compacte.
+* Les boutons globaux passent à une hauteur plus réduite pour améliorer la densité sans changer la palette premium.
+
+### **🔁 Compatibilité et stabilité**
+
+* Les callbacks existants et les noms de variables des composants CSV sont conservés.
+* Aucun changement sur `app.load`, le pont JS ou les événements Galerie.
+
+## **v4.4.2 Pro — Refonte UI premium**
+
+Modernisation visuelle complète de l'interface, en restant dans une modification CSS ciblée pour préserver la stabilité Gradio/Svelte.
+
+### **🎨 Thème**
+
+* Nouveau thème sombre premium type control-room : surfaces nettes, bordures discrètes, ombres propres et accents teal/ambre/bleu/vert.
+* Boutons, onglets, champs, accordéons, DataFrames, galerie, drop-zone dataset, panneau IA, module traduction et bibliothèque custom harmonisés.
+* États hover/focus/sélection plus lisibles, notamment pour la galerie multi-sélection.
+
+### **🧱 Mise en page**
+
+* Panels principaux retravaillés sans changer leurs IDs ni leurs callbacks.
+* Colonnes gauche/droite conservées avec collapse existant, mais habillage et respirations modernisés.
+* Responsive conservé : les panels repassent pleine largeur sur petits écrans.
+
+### **🔁 Compatibilité et stabilité**
+
+* Aucun changement de logique métier.
+* Aucun changement sur `app.load`, `Gallery` au chargement, ni sur le pont JS.
+* Version alignée sur `v4.4.2 Pro` dans Python, langues, scripts Windows, README et prompt de reprise.
+
+## **v4.4.1 Pro — Polish release & smoke check**
+
+Petite passe de durcissement release sans changement de logique métier ni modification des flux `app.load`, `Gallery` ou onglets.
+
+### **🧭 Cohérence de version**
+
+* Ajout d'une constante `APP_VERSION` / `APP_TITLE` côté Python.
+* Le titre Gradio, les fichiers de langue, `start.bat`, `install.bat`, le README et le prompt de reprise sont alignés sur `v4.4.1 Pro`.
+
+### **🧪 Vérification release**
+
+* Ajout de `tools/release_check.py` pour vérifier rapidement :
+  * compilation de `lora_manager.py`;
+  * validité JSON FR/EN;
+  * symétrie des clés `MSG` et `UI_T`;
+  * import du module;
+  * retour de `change_language`;
+  * présence ou fallback de `tiktoken`.
+
+### **📦 Dépendances optionnelles**
+
+* Ajout de `requirements-optional.txt` avec `tiktoken`.
+* Le README précise que `tiktoken` améliore le compteur de tokens mais reste optionnel.
+
+### **📝 Documentation**
+
+* Correction de la règle Gradio 6 dans le README : garder `app.load(..., js=custom_js)` et ajouter aussi `launch(js=f"({custom_js})();")` pour Gradio 6+, protégé par `window.__DIES_INJECTED`.
+* Ajout d'une section courte "Known Limitations".
+
+## **v4.4 Pro — Quick wins UX (tokens, Ctrl+D, Tout sélectionner, filtre multi-tags, chemins récents, CSV captions)**
+
+Six améliorations ciblées sans toucher à `app.load`, `Gallery` au chargement, ni aux onglets.
+
+### **🔢 Compteur de tokens précis**
+
+* Si `tiktoken` est installé (`pip install tiktoken`), le compteur utilise l'encodage `cl100k_base` (CLIP/BPE réel) au lieu d'une estimation `mots × 1.3`.
+* Fallback transparent si `tiktoken` absent — aucune régression.
+
+### **⌨️ Raccourci Ctrl+D — Dupliquer la caption vers l'image suivante**
+
+* `Ctrl+D` (hors champ de saisie) sauvegarde la caption courante, la copie dans l'image suivante, et navigue vers cette image.
+* Utile pour propager un template de caption et commencer à l'éditer.
+
+### **☑️ Bouton "Tout sélectionner" dans la galerie**
+
+* Nouveau bouton `☑️ Tout sélectionner` à côté de `🧹 Effacer`.
+* Sélectionne toutes les images visibles dans la galerie filtrée (même effet que `Ctrl+A`, mais visible).
+
+### **🔍 Filtre galerie multi-tags (AND)**
+
+* La barre de recherche accepte maintenant plusieurs tags séparés par une virgule : `man, portrait` filtre les images contenant **les deux** tags.
+* Un seul tag → comportement identique à avant.
+
+### **🕐 Historique des chemins récents**
+
+* Dropdown "Chemins récents" sous le champ de chemin : les 10 derniers dossiers chargés avec succès apparaissent automatiquement.
+* Persisté dans `ui_settings.json`. Sélectionner un chemin remplit le champ et recharge le dataset.
+
+### **📋 Import / Export CSV captions (workflow IA externe)**
+
+* Nouveau accordéon **📋 Import / Export CSV** dans la zone de chargement.
+* **Export** : génère un CSV `Numéro, Fichier, Caption` dans `stats_exports/`. Les captions existantes sont pré-remplies ; les vides restent vides.
+* **Import** : lit un CSV rempli et applique les captions aux images par correspondance de nom de fichier. Parfait pour envoyer le CSV + une planche numérotée à Claude/Gemini/ChatGPT et récupérer le captionning en masse.
+
+### **🔁 Compatibilité et stabilité**
+
+* `py_compile` OK, JSON FR/EN symétriques (183 clés UI_T chacun), `change_language` 173/173 outputs.
+* Aucun output de `app.load` ajouté, aucune mise à jour de `Gallery` au chargement.
+* `tiktoken` optionnel — le logiciel démarre sans lui.
+
+
+
+## **v4.3.7 Pro (Hotfix — drag & drop datasets Pinokio sur lecteurs externes)**
+
+Cette correction améliore le chargement par glisser-déposer quand le navigateur masque le chemin local du dossier.
+
+### **📁 Chargement dataset**
+
+* La résolution Python des dossiers déposés priorise maintenant les racines Pinokio/ComfyUI sur tous les lecteurs Windows disponibles, par exemple `F:\Pinokio\ComfyUI.git\app\models\loras`.
+* Le scoring d'une signature de drop sans chemin absolu évite de scanner récursivement de gros dossiers candidats, afin de ne pas expirer avant d'atteindre le bon sous-dossier.
+* Testé avec un dossier dataset situé sous `F:\Pinokio\ComfyUI.git\app\models\loras\...` et une signature type navigateur sans chemin absolu.
+
+## **v4.3.7 Pro (Hotfix — valeurs Gradio après changement de langue)**
+
+Cette correction cible deux erreurs vues dans la console Python pendant l'utilisation.
+
+### **🌐 Langue & export**
+
+* Correction du `Radio` de stratégie d'export : quand l'interface passe de FR à EN, la valeur active est maintenant remappée avec les choix de la nouvelle langue.
+* Évite l'erreur Gradio : `Value: 'Filtre Classique' is not in the list of choices: ['Classic Filter', ...]`.
+
+### **⚙️ Doublons**
+
+* Les dropdowns de doublons vides utilisent maintenant `None` au lieu de `""` comme valeur.
+* Évite l'erreur Gradio : `Value:  is not in the list of choices: []` après un scan sans doublons ou une liste vidée.
+
+### **🔁 Compatibilité et stabilité**
+
+* Tests passés : `python -m py_compile lora_manager.py`, import du module, `change_language` 167/167 outputs et remapping FR/EN de la stratégie d'export.
+
+## **v4.3.7 Pro (Backlog rapide — Stats cliquables & traduction IA clarifiée)**
+
+Cette mise à jour ajoute deux items de backlog ciblés, sans modifier `app.load`.
+
+### **📈 Statistiques**
+
+* Un clic sur une ligne du tableau **Statistiques Générales** remplit maintenant le filtre galerie avec le tag choisi.
+* La galerie, la sélection et le compteur sont remis à jour immédiatement après ce filtrage.
+
+### **🤖 Assistant IA**
+
+* L'action IA `Traduction Automatique (Vers Anglais)` est renommée en **Traduction Batch (Vers Anglais)** dans le dropdown.
+* L'ancien libellé reste accepté côté code pour compatibilité avec d'anciens presets ou recettes.
+* La description précise que cette action travaille sur la sélection ou le dataset, tandis que le module Traduction du viewer reste prévu pour l'image courante.
+
+### **🔁 Compatibilité et stabilité**
+
+* Tests passés : `python -m py_compile lora_manager.py`, test fonctionnel du clic Stats → filtre, et compatibilité de l'ancien libellé de traduction IA.
+
+## **v4.3.6 Pro (Backlog rapide — bibliothèque persistante, exports stats, timeout IA)**
+
+Cette mise à jour traite quatre items du backlog de `SUGGESTIONS.md` sans toucher à `app.load` ni à la structure des onglets.
+
+### **📚 Bibliothèque & statistiques**
+
+* La bibliothèque de mots du panneau droit est maintenant persistée dans `library.json`.
+* Les mots cochés restent une préférence de session : seul le texte est sauvegardé, pas l'état sélectionné.
+* Ajout de deux exports directs pour les statistiques globales : CSV et Markdown, écrits dans `stats_exports/`.
+
+### **🤖 IA & rapport de biais**
+
+* Ajout d'un champ **Timeout API (secondes)** dans les paramètres avancés IA.
+* Le timeout est sauvegardé dans `ai_settings.json` et utilisé par les appels IA principaux : actions IA, recette IA, traduction IA, live translation IA et rapport de biais.
+* Quand le dataset est modifié par une action majeure, l'UI affiche une note indiquant de relancer le rapport de biais IA.
+
+### **🔁 Compatibilité et stabilité**
+
+* Tests passés : `python -m py_compile lora_manager.py`, JSON FR/EN parseables et symétriques, `change_language` 167/167 outputs, tests fonctionnels pour `library.json`, export CSV/Markdown et timeout borné.
+
+## **v4.3.5 Pro (Phase 3 UX — progression, sélection, tri basse résolution, presets IA)**
+
+Cette mise à jour livre la **Phase 3** de `SUGGESTIONS.md` avec des actions longues plus lisibles et des outils de ciblage plus directs.
+
+### **⚙️ Pré-traitement & doublons**
+
+* Le resize/pré-traitement affiche une progression Gradio et peut maintenant traiter uniquement la sélection active.
+* Le bouton de pré-traitement indique quand une sélection est active.
+* Ajout d'un seuil de résolution minimum pour détecter les images trop petites, puis les déplacer dans `_trop_petites` avec leurs captions sans suppression définitive.
+* Le scan de doublons propose maintenant `average_hash`, `phash`, `dhash` et `whash`, avec `phash` par défaut.
+* Ajout d'un bouton confirmé pour supprimer automatiquement tous les fichiers B des paires de doublons détectées.
+
+### **🤖 Assistant IA**
+
+* Les traitements IA batch affichent une progression image par image.
+* Ajout du bouton **Sélectionner les images sans caption** pour cibler rapidement les images à tagger.
+* Ajout d'un dropdown de presets de format : Booru, phrase naturelle Flux, minimal trigger + 5 tags et personnalisé.
+
+### **🔁 Compatibilité et stabilité**
+
+* La synchronisation JS de sélection accepte maintenant une charge Python `__SET_SELECTION__` pour refléter visuellement les sélections créées côté backend.
+* `show_progress` est câblé en mode Gradio `"full"` pour rester compatible avec Gradio 6.14.
+* Aucun output de `app.load` ajouté, aucune mise à jour de `Gallery` au chargement.
+* Tests passés : `python -m py_compile lora_manager.py`, import du module, JSON FR/EN parseables et symétriques, `change_language` 164/164 outputs, tests fonctionnels sur mini-dataset temporaire pour resize sur sélection, basse résolution, doublons B, sélection captions vides et presets IA.
+* Vérification navigateur : démarrage Gradio local, titre `v4.3.5`, raccourcis `Ctrl+3` / `Ctrl+4` vers les onglets, présence des nouveaux contrôles Phase 3, aucun log console en erreur.
+
+## **v4.3.4 Pro (Phase 2 UX — favoris, suppression viewer, doublons enrichis, IA testable)**
+
+Cette mise à jour livre la **Phase 2** de `SUGGESTIONS.md`. Elle ajoute des raccourcis et contrôles plus directs, sans refondre la structure Gradio.
+
+### **📂 Favoris & sélection**
+
+* Sélectionner un favori dans le dropdown déclenche maintenant le chargement du dataset automatiquement.
+* Le statut de sélection affiche un compteur unifié : `X sélectionnées · Y filtrées · Z au total`.
+* `Ctrl+A` reste limité aux images actuellement visibles dans la galerie filtrée ; le compteur rend ce comportement explicite.
+
+### **🗑️ Viewer & doublons**
+
+* Ajout d'un bouton **Supprimer cette image** dans le viewer, plus le raccourci `Delete` hors champ de saisie, avec confirmation avant suppression définitive.
+* La suppression de l'image courante met à jour dataset, filtre, galerie, viewer, tags et sélection.
+* Le comparateur de doublons affiche maintenant les captions A et B sous les images.
+* Ajout d'un bouton **Ignorer ce doublon** qui retire la paire courante de la liste sans toucher aux fichiers.
+* Après suppression physique, les IDs internes du dataset sont réindexés et les mappings de doublons restants sont rafraîchis pour éviter les décalages.
+
+### **🤖 Assistant IA**
+
+* Le mode d'injection s'applique maintenant à toutes les actions IA, pas seulement au prompt personnalisé.
+* Ajout d'une note UI indiquant que le mode d'injection concerne toutes les actions.
+* Ajout du bouton **Tester sur l'image courante** pour essayer une action IA sur l'image affichée sans modifier la sélection galerie.
+
+### **🔁 Compatibilité et stabilité**
+
+* Aucun output de `app.load` ajouté, aucune mise à jour de `Gallery` au chargement.
+* Tests passés : `python -m py_compile lora_manager.py`, import du module `lora_manager`, JSON FR/EN parseables et symétriques, `change_language` 157/157 outputs, tests fonctionnels sur mini-dataset temporaire pour compteur, suppression viewer, doublons, skip doublon et injection IA.
+* Vérification navigateur complète non rejouée sur cette phase : la route du navigateur intégré Codex est devenue indisponible pendant la session après les tests Phase 1.
+
+## **v4.3.3 Pro (Hotfix UX — raccourcis clavier & doublons visuels)**
+
+Cette mise à jour livre la **Phase 1** de `SUGGESTIONS.md` avec des corrections ciblées et peu risquées, sans modifier `app.load`, les onglets, ni la restauration de la galerie au chargement.
+
+### **⌨️ Raccourcis clavier**
+
+* Ajout de `Ctrl+Z` / `Cmd+Z` pour déclencher l'undo global quand le focus n'est pas dans un champ de saisie.
+* Ajout de `Escape` pour vider la barre de recherche quand elle est active.
+* Ajout de `Ctrl+Shift+C` / `Cmd+Shift+C` pour copier directement la caption courante dans le presse-papier.
+* Ajout de `Ctrl+1` à `Ctrl+6` / `Cmd+1` à `Cmd+6` pour changer rapidement d'onglet.
+* Le texte d'aide des raccourcis FR/EN mentionne maintenant les nouveaux raccourcis de caption et d'undo.
+
+### **🗑️ Doublons visuels**
+
+* Ajout d'une confirmation JavaScript avant suppression définitive via les boutons **Supprimer A** / **Supprimer B**.
+* Après suppression d'un doublon, la galerie est maintenant rafraîchie immédiatement pour retirer l'image supprimée sans rechargement manuel.
+* Le slider de tolérance des doublons affiche désormais une explication claire : `0 = clones exacts`, `5 = recommandé`, `20 = très permissif`, avec une note FR/EN sous le contrôle.
+
+### **🔁 Compatibilité et stabilité**
+
+* Les nouveaux raccourcis sont ajoutés dans le listener clavier existant, sans nouveau listener global concurrent.
+* `Ctrl+Z` respecte l'édition de caption : l'undo global ne se déclenche pas pendant la saisie dans un input/textarea.
+* Le raccourci `Ctrl+1` à `Ctrl+6` résout d'abord le libellé depuis la liste complète `.tab-container.visually-hidden button`, puis clique soit l'onglet visible `button[role="tab"]`, soit l'entrée du menu `.overflow-dropdown`. Le sélecteur `.gradio-tabs > .tab-nav button` ne correspond pas au DOM Gradio/Svelte actuel, et `button[role="tab"]` seul ne couvre que les onglets visibles hors menu d'overflow.
+* Le `custom_js` reste déclaré via `app.load(..., js=custom_js)` sans outputs, et il est aussi passé à `launch(js=f"({custom_js})();")` uniquement avec Gradio 6+. Le garde-fou `window.__DIES_INJECTED` évite toute double installation. Ce fallback est nécessaire avec Gradio 6.14 : `app.load` peut contenir le JS dans la config sans l'exécuter dans le navigateur, tandis que `launch(js=...)` attend du code exécutable immédiatement, pas une expression `function() { ... }` nue.
+* Tests passés : `python -m py_compile lora_manager.py`, import du module `lora_manager`, JSON FR/EN parseables et symétriques, démarrage Gradio local, navigation `Ctrl+1` à `Ctrl+6`, vérification du texte d'aide de tolérance.
+
 ## **v4.3.2 Pro (UI/UX — Panels thématiques, Favoris repositionnés, double toggle latéral, Recette IA durcie)**
 
 Cette mise à jour est principalement **esthétique et ergonomique**, plus une **correction comportementale ciblée** sur la génération de recette globale par IA. Aucune logique métier critique n'a été touchée. La structure Gradio reste fonctionnellement identique à v4.3.1, ce qui préserve la stabilité acquise sur les onglets et la galerie.
@@ -111,7 +483,7 @@ Cette mise à jour stabilise l'interface après les ajustements liés à Gradio 
 * Correction d'un gel de l'interface où les onglets **Visualiseur & Édition**, **Édition en Batch**, **Pré-traitement & Doublons**, **Assistant IA**, **Export & Recette** et **Statistiques Générales** ne répondaient plus au clic.
 * Cause identifiée : une mise à jour frontend de la `Gallery` via `app.load(... outputs=[gallery])` pouvait déclencher une boucle interne Gradio/Svelte (`flush`) et rendre l'interface non interactive.
 * Le réglage des colonnes est maintenant appliqué au démarrage Python depuis `ui_settings.json`, sans forcer un update frontend au chargement de la page.
-* Le JavaScript custom sensible reste injecté via `app.load(..., js=custom_js)` et n'est pas passé via `launch(js=...)`, afin d'éviter les incompatibilités Gradio 6.
+* À cette étape de l'historique, le JavaScript custom sensible restait injecté uniquement via `app.load(..., js=custom_js)`. Depuis v4.4.1, Gradio 6+ utilise aussi `launch(js=f"({custom_js})();")` avec garde-fou `window.__DIES_INJECTED`.
 
 ### **🖼️ Galerie : colonnes persistantes**
 
@@ -273,28 +645,28 @@ Cette mise à jour se concentre sur l'accélération radicale du flux de travail
 
 ### **📚 Nouveau : Bibliothèque de mots (Mass Batch Custom)**
 
-* **Module 100% sur mesure :** Remplacement de l'ancien tableau par une liste cliquable personnalisée (HTML/JS) immunisée contre les blocages de Gradio.  
-* **Sélection visuelle :** Les mots cochés s'illuminent en orange instantanément.  
-* **Édition de masse :** Nouveaux modes pour **Ajouter**, **Retirer** ou **Remplacer** des mots spécifiques sur toute une sélection d'images d'un seul clic.  
+* **Module 100% sur mesure :** Remplacement de l'ancien tableau par une liste cliquable personnalisée (HTML/JS) immunisée contre les blocages de Gradio.
+* **Sélection visuelle :** Les mots cochés s'illuminent en orange instantanément.
+* **Édition de masse :** Nouveaux modes pour **Ajouter**, **Retirer** ou **Remplacer** des mots spécifiques sur toute une sélection d'images d'un seul clic.
 * **Mise à jour en temps réel :** L'application de la bibliothèque rafraîchit immédiatement l'éditeur de texte et la galerie visuelle.
 
 ### **🌍 Traduction Avancée & Live**
 
-* **Aperçu Live Natif :** Le visualiseur de traduction en temps réel utilise désormais un composant natif stylisé en CSS (vert) pour une stabilité parfaite.  
-* **Traduction Globale :** Nouveau bouton permettant de traduire l'intégralité du caption actuel vers l'anglais et de le sauvegarder automatiquement.  
+* **Aperçu Live Natif :** Le visualiseur de traduction en temps réel utilise désormais un composant natif stylisé en CSS (vert) pour une stabilité parfaite.
+* **Traduction Globale :** Nouveau bouton permettant de traduire l'intégralité du caption actuel vers l'anglais et de le sauvegarder automatiquement.
 * **Analyse contextuelle :** Le traducteur lit désormais la phrase entière au lieu de la découper mot à mot, garantissant une meilleure détection de la langue de départ (ex: *lumière* traduit correctement en *light*).
 
 ### **✨ UI, UX & Navigation**
 
-* **Navigation "Mains sur le clavier" :** Ajout des raccourcis PageUp et PageDown pour passer à l'image précédente/suivante sans jamais perdre le focus de frappe dans la zone de texte.  
-* **Tri Dynamique :** Ajout d'une option au-dessus de la galerie pour trier les images par ordre alphabétique croissant (A-Z) ou décroissant (Z-A).  
+* **Navigation "Mains sur le clavier" :** Ajout des raccourcis PageUp et PageDown pour passer à l'image précédente/suivante sans jamais perdre le focus de frappe dans la zone de texte.
+* **Tri Dynamique :** Ajout d'une option au-dessus de la galerie pour trier les images par ordre alphabétique croissant (A-Z) ou décroissant (Z-A).
 * **Interface "Desktop" :** Suppression forcée par CSS des en-têtes et pieds de page natifs de Gradio (menu hamburger) pour une interface plus propre et immersive. La barre "Recette Globale" a été rapatriée en haut de l'écran.
 
 ### **🛠️ Correctifs & Optimisations (Gradio 4\)**
 
-* **Backups Intelligents :** Le script ne génère plus de fichiers .bak inutiles si le fichier .txt d'origine est complètement vide.  
-* **Contournement de Sécurité JS :** Les événements onclick bloqués par Gradio ont été remplacés par un système global d'attributs data-idx couplé à un horodatage (Date.now()), garantissant une réactivité parfaite aux clics.  
-* **Fenêtres de confirmation :** Réparation des pop-ups JavaScript de confirmation (Batch & Undo) qui faisaient perdre les données en mémoire sous Gradio 4\.  
+* **Backups Intelligents :** Le script ne génère plus de fichiers .bak inutiles si le fichier .txt d'origine est complètement vide.
+* **Contournement de Sécurité JS :** Les événements onclick bloqués par Gradio ont été remplacés par un système global d'attributs data-idx couplé à un horodatage (Date.now()), garantissant une réactivité parfaite aux clics.
+* **Fenêtres de confirmation :** Réparation des pop-ups JavaScript de confirmation (Batch & Undo) qui faisaient perdre les données en mémoire sous Gradio 4\.
 * **Internationalisation (100%) :** Tous les nouveaux modules, alertes Javascript et messages système sont désormais liés aux fichiers fr.json et en.json pour une bascule linguistique instantanée et totale.
 
 ## **v3.0 Pro**
@@ -303,42 +675,42 @@ Cette mise à jour majeure transforme l'outil en une véritable suite profession
 
 ### **🤖 Nouveautés IA (Assistant Local via API)**
 
-* **Intégration Ollama / LM Studio :** Support natif pour exécuter des modèles de langage (LLM) et de vision (VLM) directement sur le dataset via API locale.  
-* **Auto-Taggage / Super OCR (VLM) :** Génération complète de captions ou extraction précise de textes incrustés dans l'image.  
-* **Reality Check & Chasseur d'Hallucinations (VLM) :** L'IA compare le texte à l'image et supprime automatiquement les tags qui décrivent des éléments invisibles.  
-* **Concept Isolator (VLM) :** L'IA décrit l'environnement et ignore le sujet central, idéal pour préparer les données d'entraînement de LoRAs de personnages.  
-* **Traducteur Visuel (Booru ↔ Naturel) :** Conversion intelligente des listes de tags en phrases complètes fluides (optimisé pour Flux et SD3).  
-* **Tag Sorting & Standardisation :** Restructuration des tags par ordre d'importance et correction automatique des erreurs sémantiques.  
+* **Intégration Ollama / LM Studio :** Support natif pour exécuter des modèles de langage (LLM) et de vision (VLM) directement sur le dataset via API locale.
+* **Auto-Taggage / Super OCR (VLM) :** Génération complète de captions ou extraction précise de textes incrustés dans l'image.
+* **Reality Check & Chasseur d'Hallucinations (VLM) :** L'IA compare le texte à l'image et supprime automatiquement les tags qui décrivent des éléments invisibles.
+* **Concept Isolator (VLM) :** L'IA décrit l'environnement et ignore le sujet central, idéal pour préparer les données d'entraînement de LoRAs de personnages.
+* **Traducteur Visuel (Booru ↔ Naturel) :** Conversion intelligente des listes de tags en phrases complètes fluides (optimisé pour Flux et SD3).
+* **Tag Sorting & Standardisation :** Restructuration des tags par ordre d'importance et correction automatique des erreurs sémantiques.
 * **Prompt Personnalisé & Templates :** Possibilité de créer ses propres requêtes IA (avec la variable {tags}), de choisir le mode d'injection (Remplacer, Ajouter) et de sauvegarder ses propres recettes IA.
 
 ### **🖼️ Pré-traitement & Gestion de Fichiers**
 
-* **Traque aux Doublons (ImageHash) :** Scanner visuel paramétrable détectant les images similaires (clones exacts ou recadrages) avec interface de suppression rapide A/B.  
-* **Smart Face Crop (OpenCV) :** Recadrage automatique centré sur les visages détectés pour optimiser les portraits.  
-* **Auto-Formatage 1:1 :** Recadrage carré parfait depuis le centre.  
-* **Redimensionnement de Masse :** Downscaling haute qualité (Lanczos) vers 512, 768, 1024 ou 1536px, avec conversion au format WebP ou JPEG.  
-* **Gestion Alpha/Transparence :** Les images avec fond transparent (ex: PNG détourés) sont automatiquement aplaties sur fond blanc avant le redimensionnement pour éviter les artefacts noirs.  
+* **Traque aux Doublons (ImageHash) :** Scanner visuel paramétrable détectant les images similaires (clones exacts ou recadrages) avec interface de suppression rapide A/B.
+* **Smart Face Crop (OpenCV) :** Recadrage automatique centré sur les visages détectés pour optimiser les portraits.
+* **Auto-Formatage 1:1 :** Recadrage carré parfait depuis le centre.
+* **Redimensionnement de Masse :** Downscaling haute qualité (Lanczos) vers 512, 768, 1024 ou 1536px, avec conversion au format WebP ou JPEG.
+* **Gestion Alpha/Transparence :** Les images avec fond transparent (ex: PNG détourés) sont automatiquement aplaties sur fond blanc avant le redimensionnement pour éviter les artefacts noirs.
 * **Batch Renaming :** Renommage propre et incrémental (prefix\_0001.jpg) de toutes les images et de leurs .txt associés en un clic.
 
 ### **UI / UX**
 
-* Ajout d'onglets pour une meilleure catégorisation (Vue, Batch, Pré-traitement, IA, Export, Stats).  
+* Ajout d'onglets pour une meilleure catégorisation (Vue, Batch, Pré-traitement, IA, Export, Stats).
 * Ajout de panneaux d'information "Astuce" interactifs avec encodage HTML/CSS direct.
 
 ### **Stats**
 
-* **Matrice de Co-occurrence (Heatmap) :** Graphique interactif Plotly analysant les liens entre vos 20 tags principaux pour détecter le "Concept Bleeding".  
-* **Résolution Bucketing :** Graphique en nuage de points pour visualiser la répartition des résolutions de vos images brutes.  
-* **Chasseur de Contradictions :** Détection automatique d'aberrations logiques dans vos captions (ex: "day" \+ "night", ou "solo" \+ "multiple girls").  
+* **Matrice de Co-occurrence (Heatmap) :** Graphique interactif Plotly analysant les liens entre vos 20 tags principaux pour détecter le "Concept Bleeding".
+* **Résolution Bucketing :** Graphique en nuage de points pour visualiser la répartition des résolutions de vos images brutes.
+* **Chasseur de Contradictions :** Détection automatique d'aberrations logiques dans vos captions (ex: "day" \+ "night", ou "solo" \+ "multiple girls").
 * **Matrice d'Exclusion :** Liste les combinaisons de mots qui n'apparaissent *jamais* ensemble pour vérifier la diversité de votre concept.
 
 ### **Bugs (Gradio 4+ fixes)**
 
-* **Boucle infinie des mots-clés :** Le calcul des statistiques ne se déclenche plus à chaque lettre tapée, mais uniquement lors de la frappe d'une virgule ,, de la touche Entrée, ou en quittant la case. Fin des effacements intempestifs \!  
-* **Bug de surlignage HTML ("Background") :** Correction d'une faille où les mots-clés (comme "background" ou "color") corrompaient la balise HTML \<mark\> utilisée pour le surlignage. Le moteur Regex traite désormais les mots les plus longs en premier et en une seule passe.  
-* **Boutons fantômes (Gradio 4\) :** Remplacement de visible=False par du CSS display: none \!important pour les boutons de synchronisation Python/JS, car Gradio 4 détruisait complètement les éléments du DOM, rendant les scripts inopérants.  
-* **Bouton de copie CivitAI :** Suppression du paramètre obsolète show\_copy\_button=True qui causait des crashs au lancement, et génération d'un tableau purement Markdown formaté.  
-* **Avertissement col\_count :** Mise à jour du paramètre déprécié col\_count vers column\_count pour un terminal propre.  
+* **Boucle infinie des mots-clés :** Le calcul des statistiques ne se déclenche plus à chaque lettre tapée, mais uniquement lors de la frappe d'une virgule ,, de la touche Entrée, ou en quittant la case. Fin des effacements intempestifs \!
+* **Bug de surlignage HTML ("Background") :** Correction d'une faille où les mots-clés (comme "background" ou "color") corrompaient la balise HTML \<mark\> utilisée pour le surlignage. Le moteur Regex traite désormais les mots les plus longs en premier et en une seule passe.
+* **Boutons fantômes (Gradio 4\) :** Remplacement de visible=False par du CSS display: none \!important pour les boutons de synchronisation Python/JS, car Gradio 4 détruisait complètement les éléments du DOM, rendant les scripts inopérants.
+* **Bouton de copie CivitAI :** Suppression du paramètre obsolète show\_copy\_button=True qui causait des crashs au lancement, et génération d'un tableau purement Markdown formaté.
+* **Avertissement col\_count :** Mise à jour du paramètre déprécié col\_count vers column\_count pour un terminal propre.
 * **Bug de démarrage :** Sécurisation des fonctions d'interface (MSG\[lang\].get) pour éviter les crashs KeyError: None si l'initialisation de Gradio se fait avant le chargement complet des langues.
 
 ## **🌍 Internationalisation**
