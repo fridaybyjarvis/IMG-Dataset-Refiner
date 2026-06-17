@@ -1,5 +1,20 @@
 # **📝 Changelog \- IMG Dataset Refiner**
 
+## **v4.4.6 Pro — Hotfix traduction Planche & CSV/MD**
+
+### **🌐 Internationalisation**
+
+* Correction du rafraîchissement de langue pour l'onglet **Contact sheet(s) / Planche(s) compilation(s)** : labels, accordéons, boutons, dropdowns et aperçu sont maintenant branchés sur `fr.json` / `en.json`.
+* Les choix de la Planche utilisent maintenant des labels localisés tout en conservant les valeurs internes historiques en français, afin de ne pas casser la génération/export ni les réglages sauvegardés.
+* Correction de l'encart **Import / Export CSV/MD** : dropzone, boutons Markdown et lien vers la Planche se traduisent aussi en direct.
+* Correction du message initial de bibliothèque vide, qui était rendu en français même quand la langue serveur démarrait en anglais.
+
+### **🖼️ Planche(s) compilation(s)**
+
+* Réduction de la latence ressentie de la planche témoin : les rafraîchissements live ignorent maintenant les rendus intermédiaires obsolètes et gardent seulement le dernier réglage.
+* L'aperçu live utilise des événements plus immédiats (`input` / `release`) au lieu d'attendre le `change` Gradio plus tardif.
+* Les miniatures de prévisualisation sont mises en cache et le rendu live utilise une résolution plus légère, sans modifier la qualité de l'export final.
+
 ## **v4.4.6 Pro — Finalisation UI premium, crop rapide, captions CSV/MD et traduction bidirectionnelle**
 
 Grosse passe de finition orientée usage quotidien : interface plus compacte, galerie stabilisée, pré-traitement plus confortable, import/export captions plus simple et traduction live utilisable dans les deux sens.
@@ -14,6 +29,8 @@ Grosse passe de finition orientée usage quotidien : interface plus compacte, ga
 
 ### **⭐ Chargement dataset, favoris et langue**
 
+* Ajout d'un bouton toggle **Sous-dossiers ON/OFF** pour le chargement par Browse, chemin manuel, favoris et drag/drop.
+* En mode sous-dossiers, les images sont identifiées par leur chemin relatif pour éviter les collisions entre fichiers portant le même nom.
 * Le menu Favoris n'est plus pré-sélectionné au démarrage, afin qu'un clic sur une adresse déclenche toujours le chargement.
 * Cliquer un favori charge directement le dataset choisi et garde le champ chemin synchronisé.
 * La langue par défaut côté serveur est l'anglais pour les nouveaux utilisateurs, avec bascule automatique vers FR si le navigateur est en français.
@@ -35,6 +52,7 @@ Grosse passe de finition orientée usage quotidien : interface plus compacte, ga
 * L'import CSV passe par un drop-zone/fichier dédié au clic sur `Import filled CSV`.
 * Ajout d'un export/import Markdown `.md` avec les mêmes 3 données que le CSV : numéro, fichier, caption.
 * Le drop-zone d'import accepte CSV et Markdown, puis applique les captions par correspondance de nom de fichier.
+* Après import CSV/MD, le viewer courant est rafraîchi pour éviter que la caption affichée vide écrase la caption importée lors de la navigation suivante.
 
 ### **💡 Traduction live bidirectionnelle**
 

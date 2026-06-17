@@ -45,6 +45,9 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 ## Highlights in v4.4.6 Pro
 
 - Premium compact dark UI with a denser workspace, sticky gallery and cleaner dataset loading header.
+- Optional subfolder loading with relative-path identity for nested datasets.
+- Contact sheet generation for filtered galleries or multi-selection, with coherent dataset numbering for CSV roundtrips.
+- Faster live contact-sheet preview with cached preview thumbnails and immediate setting updates.
 - Bidirectional live translation: edit the English caption or edit the translated preview and sync back to English.
 - Manual image-by-image crop tool with fixed/free ratios, mouse-wheel zoom, keyboard navigation and instant overwrite.
 - Caption CSV and Markdown export/import directly from the current dataset folder.
@@ -59,22 +62,22 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 
 ### Main Workspace
 
-![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/1.jpeg)
+![Main workspace preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/2c11b933b7aa6ca2f9abeb69668568d8adecca68/screenshots%20demo/v4.4.6/1.png)
 
 
 ### AI Assistant
 
-![AI assistant preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/4.jpeg?raw=true)
+![AI assistant preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/2c11b933b7aa6ca2f9abeb69668568d8adecca68/screenshots%20demo/v4.4.6/4.png)
 
 
 ### Export & Recipe
 
-![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/5.jpeg?raw=true)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/2c11b933b7aa6ca2f9abeb69668568d8adecca68/screenshots%20demo/v4.4.6/6.png)
 
 
 ### Advanced Analytics
 
-![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.3/3.jpeg?raw=true)
+![Export recipe preview](https://github.com/NyxAwroo/IMG-Dataset-Refiner/blob/main/screenshots%20demo/v4.4.6/5.png)
 
 
 ---
@@ -85,6 +88,8 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 
 - Load datasets from local paths on any drive.
 - Drag and drop folders or files into the app.
+- Optional subfolder loading for datasets organized into nested categories.
+- In subfolder mode, images keep relative-path identity to avoid collisions between duplicate filenames.
 - Fallback folder-signature search when the browser hides absolute paths.
 - Persistent favorites for frequently used datasets.
 - Recent paths dropdown for quickly reopening previous datasets.
@@ -177,12 +182,20 @@ The app runs locally and can work with local AI servers such as **Ollama** and *
 - Versioned export folders based on the dataset name.
 - Custom export suffix with `-Sx` / `-S1`, `-S2`, `-S3` behavior.
 
+### Contact Sheets
+
+- Generate numbered contact sheets from the filtered gallery or the current multi-selection.
+- Labels can show dataset numbers, filenames, first caption lines, or nothing.
+- Dataset numbering uses absolute image IDs, so contact sheets and CSV/Markdown exports refer to the same images.
+- Flexible auto-columns, crop/pad fitting, custom background, multi-sheet splitting and final resize controls.
+- Live sample sheet refreshes automatically while editing settings; full preview and export remain available on demand.
+
 ### Caption CSV / Markdown Roundtrip
 
 - Export `Numéro`, `Fichier` and `Caption` for every image.
 - CSV and Markdown exports are written into the currently loaded dataset folder.
 - Import filled CSV or Markdown files through a drag-and-drop file input.
-- Captions are matched back to images by filename.
+- Captions are matched back to images by relative path, with a unique-filename fallback for older exports.
 
 ---
 
@@ -315,6 +328,8 @@ Important stability rules:
 - Do not update `Gallery` from `app.load`; it can trigger Gradio/Svelte `flush` loops and freeze tabs.
 - Keep hidden bridge components present in the DOM; Gradio may destroy components marked only as `visible=False`.
 - Keep global JavaScript listeners narrow and guarded.
+- For translated `Radio` / `Dropdown` choices that drive business logic, keep stable internal values and localize only the displayed labels.
+- Contact-sheet live preview uses immediate `input` / `release` events, `always_last`, and cached preview thumbnails; keep export quality separate from live-preview speed.
 - Test tab switching after any JS, gallery, dataframe, manual crop or `app.load` change.
 
 ---

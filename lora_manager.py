@@ -5,6 +5,7 @@ import shutil
 import json
 import io
 import copy
+import math
 import requests
 import base64
 import html
@@ -15,7 +16,7 @@ import plotly.express as px
 import pandas as pd
 from collections import Counter, defaultdict
 from difflib import SequenceMatcher
-from PIL import Image
+from PIL import Image, ImageOps, ImageDraw, ImageFont
 
 try:
     if hasattr(sys.stdout, "reconfigure"):
@@ -91,8 +92,45 @@ DEFAULT_AI_SETTINGS = {
 MSG = {"FR": {}, "EN": {}}
 UI_T = {"FR": {}, "EN": {}}
 LIVE_TRANSLATION_CACHE = {}
+CONTACT_SHEET_PREVIEW_IMAGE_CACHE = {}
+CONTACT_SHEET_PREVIEW_IMAGE_CACHE_MAX = 160
+CONTACT_SHEET_DEFAULTS = {
+    "source_mode": "Galerie filtrée",
+    "output_width": 3048,
+    "images_per_row": 8,
+    "spacing": 16,
+    "margin": 0,
+    "background": "#00ff00",
+    "ratio": "Hauteur variable (Original)",
+    "fit_mode": "Ajuster avec bandes (Pad)",
+    "sort_alpha": False,
+    "label_mode": "Numérotation (1, 2, 3...)",
+    "font_size": 70,
+    "label_opacity": 70,
+    "limit_enabled": True,
+    "images_per_sheet": 35,
+    "continue_numbering": True,
+    "output_dir": "",
+    "filename_prefix": "Planche_compilee",
+    "export_format": "JPEG",
+    "quality": 95,
+}
+CONTACT_SHEET_SOURCE_CHOICES = ["Galerie filtrée", "Sélection multi"]
+CONTACT_SHEET_RATIO_CHOICES = [
+    "Hauteur variable (Original)",
+    "Carré (1:1)",
+    "Paysage (4:3)",
+    "Paysage (16:9)",
+    "Portrait (3:4)",
+    "Portrait (9:16)",
+]
+CONTACT_SHEET_FIT_CHOICES = ["Remplir et Couper (Crop)", "Ajuster avec bandes (Pad)"]
+CONTACT_SHEET_LABEL_CHOICES = ["Aucun", "Numérotation (1, 2, 3...)", "Nom du fichier", "Captions (1ère ligne)"]
+CONTACT_SHEET_FORMAT_CHOICES = ["JPEG", "PNG", "WEBP"]
+CONTACT_SHEET_RATIO_MODE_CHOICES = ["Original (mélange)", "Tous carrés 1:1", "Auto-fit (remplir)"]
 DEFAULT_UI_SETTINGS = {
     "gallery_columns": 2,
+    "contact_sheet_settings": CONTACT_SHEET_DEFAULTS.copy(),
 }
 
 CONTRADICTIONS_LOGIQUES = [
@@ -740,6 +778,20 @@ body,
     min-height: 34px !important;
 }
 
+#include_subfolders_btn {
+    width: 100% !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    justify-content: flex-start !important;
+}
+
+#include_subfolders_btn.include-subfolders-on,
+#include_subfolders_btn[aria-pressed="true"] {
+    border-color: rgba(45, 212, 191, 0.72) !important;
+    background: linear-gradient(135deg, rgba(45, 212, 191, 0.9), rgba(101, 212, 110, 0.72)) !important;
+    color: #061017 !important;
+}
+
 #dataset_header .wrap:has(#dataset_status_text) {
     margin-top: 0 !important;
 }
@@ -930,6 +982,46 @@ body,
     white-space: nowrap !important;
 }
 
+/* ======================================================
+   Checkboxes — état coché clairement visible (coche blanche)
+   ====================================================== */
+.gradio-container input[type="checkbox"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    width: 20px !important;
+    height: 20px !important;
+    flex-shrink: 0 !important;
+    cursor: pointer !important;
+    border: 2px solid var(--idr-border, #2a3746) !important;
+    border-radius: 5px !important;
+    background-color: var(--idr-surface-2, #17212b) !important;
+    background-image: none !important;
+    position: relative !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease !important;
+}
+
+.gradio-container input[type="checkbox"]:hover {
+    border-color: var(--idr-teal, #2dd4bf) !important;
+}
+
+.gradio-container input[type="checkbox"]:checked {
+    background-color: var(--idr-teal, #2dd4bf) !important;
+    border-color: var(--idr-teal, #2dd4bf) !important;
+}
+
+/* Coche blanche dessinée par-dessus le fond coloré */
+.gradio-container input[type="checkbox"]:checked::after {
+    content: "" !important;
+    position: absolute !important;
+    left: 5px !important;
+    top: 1px !important;
+    width: 5px !important;
+    height: 10px !important;
+    border: solid #0b1016 !important;
+    border-width: 0 2.5px 2.5px 0 !important;
+    transform: rotate(45deg) !important;
+}
+
 #select_all_btn,
 #clear_sel_btn {
     width: 100% !important;
@@ -1012,6 +1104,9 @@ body,
 }
 
 #main_gallery button {
+    position: relative !important;
+    width: 100% !important;
+    min-width: 0 !important;
     border-radius: 7px !important;
     overflow: hidden !important;
     border: 1px solid rgba(148, 163, 184, 0.16) !important;
@@ -1027,6 +1122,13 @@ body,
     object-fit: cover !important;
 }
 
+#main_gallery button figcaption,
+#main_gallery button .caption,
+#main_gallery button [class*="caption"],
+#main_gallery button [class*="label"] {
+    display: none !important;
+}
+
 #main_gallery .grid-wrap,
 #main_gallery .grid-container,
 #main_gallery [class*="grid"] {
@@ -1034,9 +1136,73 @@ body,
     padding: 6px !important;
 }
 
+#main_gallery .idr-manual-gallery-grid {
+    --idr-manual-gallery-gap: 6px;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    align-items: start !important;
+    align-content: flex-start !important;
+}
+
+#main_gallery .idr-manual-gallery-grid > * {
+    min-width: 0 !important;
+}
+
+#main_gallery .idr-manual-gallery-grid > *:not(.gallery-folder-separator) {
+    flex: 0 0 calc((100% - (var(--idr-manual-gallery-cols, 4) - 1) * var(--idr-manual-gallery-gap)) / var(--idr-manual-gallery-cols, 4)) !important;
+    max-width: calc((100% - (var(--idr-manual-gallery-cols, 4) - 1) * var(--idr-manual-gallery-gap)) / var(--idr-manual-gallery-cols, 4)) !important;
+}
+
 #main_gallery button:hover {
     border-color: rgba(45, 212, 191, 0.55) !important;
     transform: translateY(-1px);
+}
+
+#main_gallery .gallery-folder-separator {
+    position: static !important;
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 22px !important;
+    align-self: start !important;
+    aspect-ratio: auto !important;
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin: 0 0 -2px 0;
+    padding: 2px 9px;
+    background:
+        linear-gradient(90deg, rgba(45, 212, 191, 0.18), rgba(242, 184, 75, 0.10), rgba(45, 212, 191, 0.02)),
+        #101923;
+    color: #dffcf8;
+    border-bottom: 1px solid rgba(45, 212, 191, 0.38);
+    font-size: 0.73rem;
+    font-weight: 850;
+    line-height: 1.1;
+    text-align: left;
+    text-shadow: none;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+#main_gallery .gallery-folder-separator::after {
+    content: "";
+    height: 1px;
+    flex: 1 1 auto;
+    margin-left: 10px;
+    background: linear-gradient(90deg, rgba(45, 212, 191, 0.75), rgba(242, 184, 75, 0.45), transparent);
+}
+
+#main_gallery .gallery-folder-separator + * {
+    margin-top: 0 !important;
 }
 
 .custom-selected {
@@ -1826,7 +1992,120 @@ function() {
         setTimeout(() => document.getElementById('hidden_lib_delete_btn')?.click(), 50);
     };
 
-    function updateGalleryVisuals() { document.querySelectorAll('#main_gallery button').forEach((btn, idx) => { btn.classList.toggle('custom-selected', window.gallerySelectedIndices.has(idx)); }); }
+    function getGalleryFolderLabels() {
+        return Array.from(document.querySelectorAll('#main_gallery button')).map(btn => {
+            const marker = "__IDR_FOLDER__";
+            const endMarker = "__IDR_END__";
+            const text = btn.textContent || "";
+            const pos = text.indexOf(marker);
+            if (pos < 0) return "";
+            const end = text.indexOf(endMarker, pos + marker.length);
+            const raw = end >= 0 ? text.slice(pos + marker.length, end) : text.slice(pos + marker.length);
+            return raw.trim();
+        });
+    }
+
+    function hideGalleryFolderMarkers(btn) {
+        const marker = "__IDR_FOLDER__";
+        if (!btn || !(btn.textContent || "").includes(marker)) return;
+        btn.querySelectorAll('figcaption, .caption, [class*="caption"], [class*="label"], span, p, div').forEach(el => {
+            if ((el.textContent || "").includes(marker)) {
+                el.style.display = 'none';
+                el.setAttribute('aria-hidden', 'true');
+            }
+        });
+    }
+
+    function directGalleryItems(parent) {
+        if (!parent || !parent.children) return [];
+        return Array.from(parent.children).filter(child => {
+            if (!child || !child.matches) return false;
+            if (child.classList.contains('gallery-folder-separator')) return true;
+            return child.matches('button') || !!child.querySelector?.('button');
+        });
+    }
+
+    function galleryTileForButton(btn) {
+        const gallery = document.getElementById('main_gallery');
+        let node = btn;
+        while (node && node.parentElement && node.parentElement !== gallery) {
+            const parent = node.parentElement;
+            const itemCount = directGalleryItems(parent).length;
+            if (itemCount >= 2) return node;
+            node = parent;
+        }
+        return btn;
+    }
+
+    function getManualGalleryColumnCount() {
+        const wrapper = document.getElementById('gallery_cols_slider');
+        const input = wrapper ? wrapper.querySelector('input[type="number"], input[type="range"], input') : null;
+        let value = parseInt(input?.value || "", 10);
+        if (!Number.isFinite(value)) {
+            const txt = wrapper?.innerText || "";
+            const match = txt.match(/\b([1-6])\b/g);
+            value = match && match.length ? parseInt(match[match.length - 1], 10) : 4;
+        }
+        return Math.max(1, Math.min(6, value || 4));
+    }
+
+    function applyManualGalleryColumns(btns) {
+        const cols = getManualGalleryColumnCount();
+        const containers = new Set();
+        btns.forEach(btn => {
+            const tile = galleryTileForButton(btn);
+            if (tile?.parentElement) containers.add(tile.parentElement);
+        });
+        containers.forEach(container => {
+            container.classList.add('idr-manual-gallery-grid');
+            container.style.setProperty('--idr-manual-gallery-cols', String(cols));
+        });
+    }
+
+    function renderGalleryFolderSeparators() {
+        const gallery = document.getElementById('main_gallery');
+        const btns = Array.from(document.querySelectorAll('#main_gallery button'));
+        if (!gallery || !btns.length) return;
+        applyManualGalleryColumns(btns);
+        const labels = getGalleryFolderLabels();
+        gallery.querySelectorAll('.gallery-folder-separator').forEach(row => {
+            const idx = Number(row.dataset.galleryFolderIndex);
+            const tile = Number.isInteger(idx) && btns[idx] ? galleryTileForButton(btns[idx]) : null;
+            if (!tile || !labels[idx] || row.nextElementSibling !== tile) {
+                row.remove();
+            }
+        });
+        btns.forEach((btn, idx) => {
+            btn.querySelectorAll('.gallery-folder-separator').forEach(el => el.remove());
+            btn.classList.remove('has-folder-separator');
+            hideGalleryFolderMarkers(btn);
+            const labelText = labels[idx] || "";
+            if (!labelText) return;
+            const tile = galleryTileForButton(btn);
+            let sep = tile.previousElementSibling;
+            if (!sep || !sep.classList || !sep.classList.contains('gallery-folder-separator')) {
+                sep = document.createElement('div');
+                sep.className = 'gallery-folder-separator';
+                tile.parentNode.insertBefore(sep, tile);
+            }
+            sep.dataset.galleryFolderIndex = String(idx);
+            if (sep.textContent !== labelText) sep.textContent = labelText;
+        });
+    }
+    window.renderGalleryFolderSeparators = renderGalleryFolderSeparators;
+
+    let gallerySeparatorTimer = null;
+    function scheduleGalleryFolderSeparators() {
+        if (gallerySeparatorTimer) clearTimeout(gallerySeparatorTimer);
+        gallerySeparatorTimer = setTimeout(renderGalleryFolderSeparators, 120);
+    }
+
+    function updateGalleryVisuals() {
+        document.querySelectorAll('#main_gallery button').forEach((btn, idx) => {
+            btn.classList.toggle('custom-selected', window.gallerySelectedIndices.has(idx));
+        });
+        scheduleGalleryFolderSeparators();
+    }
     window.updateGalleryVisuals = updateGalleryVisuals;
     function syncWithPython(viewIndex) {
         const payload = { selected: Array.from(window.gallerySelectedIndices), viewIndex: viewIndex };
@@ -2634,7 +2913,27 @@ function() {
 # FONCTIONS LOGIQUES PYTHON & UTILITAIRES
 # ==========================================
 
-def get_gallery_items(filtered_dataset, lang): return [(item['img_path'], "") for item in filtered_dataset]
+def _dataset_folder_name(item):
+    name = str(item.get('rel_path') or item.get('display_name') or item.get('img_name', '')).replace("\\", "/")
+    folder = os.path.dirname(name).replace("\\", "/").strip("/")
+    return "" if folder in ("", ".") else folder
+
+def _gallery_folder_label(folder, lang):
+    return f"📁 {folder or ('Dataset root' if lang == 'EN' else 'Racine du dataset')}"
+
+def get_gallery_items(filtered_dataset, lang):
+    items = filtered_dataset or []
+    folders = [_dataset_folder_name(item) for item in items]
+    has_folders = any(folders)
+    gallery_items = []
+    previous_folder = None
+    for item, folder in zip(items, folders):
+        caption = ""
+        if has_folders and folder != previous_folder:
+            caption = "__IDR_FOLDER__" + _gallery_folder_label(folder, lang) + "__IDR_END__"
+        gallery_items.append((item['img_path'], caption))
+        previous_folder = folder
+    return gallery_items
 
 def extract_all_tags(dataset):
     all_tags = set()
@@ -3074,26 +3373,43 @@ def sort_dataset(dataset, order, lang, msg_no_sel, all_tags_str=""):
     gr.Info(success_msg)
     return dataset, dataset, [], success_msg, gal_items, [], selection_summary_html(0, len(dataset), len(dataset), lang), "{}", all_tags_str or extract_all_tags(dataset), -1
 
-def load_dataset(directory, sort_order, lang):
+def _iter_dataset_image_files(directory, include_subfolders=False):
+    valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
+    if include_subfolders:
+        pruned = {".git", "__pycache__", "venv", "node_modules"}
+        for root, dirnames, filenames in os.walk(directory):
+            dirnames[:] = sorted(
+                [d for d in dirnames if d.lower() not in pruned],
+                key=natural_sort_key,
+            )
+            for filename in sorted(filenames, key=natural_sort_key):
+                if filename.lower().endswith(valid_extensions):
+                    yield os.path.join(root, filename)
+    else:
+        for filename in sorted(os.listdir(directory), key=natural_sort_key):
+            img_path = os.path.join(directory, filename)
+            if os.path.isfile(img_path) and filename.lower().endswith(valid_extensions):
+                yield img_path
+
+def load_dataset(directory, sort_order, lang, include_subfolders=False):
     msg_no_sel = MSG[lang].get("no_selection", "Aucune sélection active.")
     # Accepter aussi bien les chemins absolus que relatifs ; normaliser.
     directory = normalize_dataset_path(directory)
     if not directory or not os.path.isdir(directory):
         return [], [], [], MSG[lang].get("folder_not_found", "Dossier introuvable."), [], [], selection_summary_html(0, 0, 0, lang), "{}", "", -1
     dataset = []
-    valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
     idx = 0
-    for filename in sorted(os.listdir(directory), key=natural_sort_key):
-        if filename.lower().endswith(valid_extensions):
-            img_path = os.path.join(directory, filename)
-            txt_path = os.path.splitext(img_path)[0] + '.txt'
-            caption = ""
-            if os.path.exists(txt_path):
-                with open(txt_path, 'r', encoding='utf-8') as f: caption = f.read().strip()
-            else:
-                with open(txt_path, 'w', encoding='utf-8') as f: pass
-            dataset.append({'id': idx, 'img_name': filename, 'img_path': img_path, 'txt_path': txt_path, 'caption': caption})
-            idx += 1
+    for img_path in _iter_dataset_image_files(directory, include_subfolders):
+        rel_name = os.path.relpath(img_path, directory).replace("\\", "/")
+        img_name = rel_name if include_subfolders else os.path.basename(img_path)
+        txt_path = os.path.splitext(img_path)[0] + '.txt'
+        caption = ""
+        if os.path.exists(txt_path):
+            with open(txt_path, 'r', encoding='utf-8') as f: caption = f.read().strip()
+        else:
+            with open(txt_path, 'w', encoding='utf-8') as f: pass
+        dataset.append({'id': idx, 'img_name': img_name, 'img_path': img_path, 'txt_path': txt_path, 'caption': caption})
+        idx += 1
     if not dataset:
         msg = MSG[lang].get("no_images_found", "No supported images found in this folder.")
         gr.Warning(msg)
@@ -3368,10 +3684,10 @@ def pick_favorite(selected, lang):
     """Sélectionne un favori : renvoie le chemin pour le champ dir_input."""
     return selected or ""
 
-def load_favorite_dataset(selected, sort_order, lang):
+def load_favorite_dataset(selected, sort_order, lang, include_subfolders=False):
     """Charge directement le dataset choisi dans les favoris."""
     path = selected or ""
-    return (gr.update(value=path),) + tuple(load_dataset(path, sort_order, lang))
+    return (gr.update(value=path),) + tuple(load_dataset(path, sort_order, lang, include_subfolders))
 
 # ==========================================
 # 🤖 PARAMÈTRES IA PERSISTANTS
@@ -3475,6 +3791,451 @@ def load_gallery_columns_for_ui():
         cols = DEFAULT_UI_SETTINGS["gallery_columns"]
     cols = max(1, min(6, cols))
     return gr.update(value=cols), gr.update(columns=cols)
+
+def load_contact_sheet_settings():
+    saved = load_ui_settings().get("contact_sheet_settings", {})
+    settings = CONTACT_SHEET_DEFAULTS.copy()
+    if isinstance(saved, dict):
+        for key in settings:
+            if key in saved:
+                settings[key] = saved[key]
+    return settings
+
+def _safe_int(value, default, min_value=None, max_value=None):
+    try:
+        value = int(float(value))
+    except Exception:
+        value = default
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+def _safe_float(value, default, min_value=None, max_value=None):
+    try:
+        value = float(value)
+    except Exception:
+        value = default
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+def _normalize_hex_color(value, default="#00ff00"):
+    value = str(value or "").strip()
+    if re.fullmatch(r"#?[0-9a-fA-F]{6}", value):
+        return value if value.startswith("#") else f"#{value}"
+    return default
+
+def _localized_choice(label, value):
+    return (label, value)
+
+def _valid_choice_value(value, valid_values, default):
+    return value if value in valid_values else default
+
+def _contact_source_choices(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    return [
+        _localized_choice(t.get("contact_source_filtered", "Galerie filtrée"), "Galerie filtrée"),
+        _localized_choice(t.get("contact_source_multi", "Sélection multi"), "Sélection multi"),
+    ]
+
+def _contact_ratio_mode_choices(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    return [
+        _localized_choice(t.get("contact_ratio_original", "Original (mélange)"), "Original (mélange)"),
+        _localized_choice(t.get("contact_ratio_square", "Tous carrés 1:1"), "Tous carrés 1:1"),
+        _localized_choice(t.get("contact_ratio_autofit", "Auto-fit (remplir)"), "Auto-fit (remplir)"),
+    ]
+
+def _contact_ratio_mode_from_setting(ratio):
+    ratio = str(ratio or "").lower()
+    if "variable" in ratio:
+        return "Original (mélange)"
+    if "1:1" in ratio:
+        return "Tous carrés 1:1"
+    return "Auto-fit (remplir)"
+
+def _contact_fit_choices(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    return [
+        _localized_choice(t.get("contact_fit_crop", "Remplir et Couper (Crop)"), "Remplir et Couper (Crop)"),
+        _localized_choice(t.get("contact_fit_pad", "Ajuster avec bandes (Pad)"), "Ajuster avec bandes (Pad)"),
+    ]
+
+def _contact_label_choices(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    return [
+        _localized_choice(t.get("contact_label_none", "Aucun"), "Aucun"),
+        _localized_choice(t.get("contact_label_numbering", "Numérotation (1, 2, 3...)"), "Numérotation (1, 2, 3...)"),
+        _localized_choice(t.get("contact_label_filename", "Nom du fichier"), "Nom du fichier"),
+        _localized_choice(t.get("contact_label_captions", "Captions (1ère ligne)"), "Captions (1ère ligne)"),
+    ]
+
+def _contact_format_choices(lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    return [
+        _localized_choice(t.get("contact_export_format_jpeg", "JPEG"), "JPEG"),
+        _localized_choice(t.get("contact_export_format_png", "PNG"), "PNG"),
+        _localized_choice(t.get("contact_export_format_webp", "WEBP"), "WEBP"),
+    ]
+
+def _contact_sheet_values_and_lang(values):
+    values = list(values)
+    if values and str(values[-1]) in UI_T:
+        return values[:-1], str(values[-1])
+    return values, "FR"
+
+def _hex_to_rgb(value):
+    value = _normalize_hex_color(value).lstrip("#")
+    return tuple(int(value[i:i+2], 16) for i in (0, 2, 4))
+
+def _contact_sheet_settings_from_inputs(
+    source_mode, output_width, flexible_cols, images_per_row, spacing, margin, background,
+    ratio_mode, fit_mode, sort_alpha, label_mode, font_size, label_opacity,
+    limit_enabled, images_per_sheet, continue_numbering, output_dir,
+    filename_prefix, export_format, quality, resize_final,
+):
+    defaults = CONTACT_SHEET_DEFAULTS
+    # Mapper le mode radio simple vers la valeur interne
+    ratio_map = {
+        "Original (mélange)": "Hauteur variable (Original)",
+        "Tous carrés 1:1": "Carré (1:1)",
+        "Auto-fit (remplir)": "Carré (1:1)",  # Voir note ci-dessous
+    }
+    ratio = ratio_map.get(ratio_mode, defaults["ratio"])
+    # Note: "Auto-fit (remplir)" utilise le même ratio 1:1 que "Tous carrés"
+    # La différence se fait via fit_mode (Crop vs Pad)
+    if ratio not in CONTACT_SHEET_RATIO_CHOICES:
+        ratio = defaults["ratio"]
+    fit_mode = fit_mode if fit_mode in CONTACT_SHEET_FIT_CHOICES else defaults["fit_mode"]
+    label_mode = label_mode if label_mode in CONTACT_SHEET_LABEL_CHOICES else defaults["label_mode"]
+    export_format = export_format if export_format in CONTACT_SHEET_FORMAT_CHOICES else defaults["export_format"]
+    source_mode = source_mode if source_mode in CONTACT_SHEET_SOURCE_CHOICES else defaults["source_mode"]
+
+    output_width_safe = _safe_int(output_width, defaults["output_width"], 256, 12000)
+    spacing_safe = _safe_int(spacing, defaults["spacing"], 0, 1000)
+    margin_safe = _safe_int(margin, defaults["margin"], 0, 2000)
+
+    # Auto-calculer les colonnes si flexible_cols est activé
+    if flexible_cols:
+        available_width = output_width_safe - (2 * margin_safe)
+        min_col_width = 100
+        cols = max(1, min(24, (available_width + spacing_safe) // (min_col_width + spacing_safe)))
+        images_per_row = cols
+    else:
+        images_per_row = _safe_int(images_per_row, defaults["images_per_row"], 1, 40)
+
+    return {
+        "source_mode": source_mode,
+        "output_width": output_width_safe,
+        "images_per_row": images_per_row,
+        "spacing": spacing_safe,
+        "margin": margin_safe,
+        "background": _normalize_hex_color(background, defaults["background"]),
+        "ratio": ratio,
+        "fit_mode": fit_mode,
+        "sort_alpha": bool(sort_alpha),
+        "label_mode": label_mode,
+        "font_size": _safe_int(font_size, defaults["font_size"], 6, 500),
+        "label_opacity": _safe_float(label_opacity, defaults["label_opacity"], 0, 100),
+        "limit_enabled": bool(limit_enabled),
+        "images_per_sheet": _safe_int(images_per_sheet, defaults["images_per_sheet"], 1, 1000),
+        "continue_numbering": bool(continue_numbering),
+        "output_dir": str(output_dir or "").strip(),
+        "filename_prefix": re.sub(r'[<>:"/\\|?*]+', "_", str(filename_prefix or defaults["filename_prefix"]).strip()) or defaults["filename_prefix"],
+        "export_format": export_format,
+        "quality": _safe_int(quality, defaults["quality"], 1, 100),
+        "resize_final": _safe_int(resize_final, 100, 25, 200),
+    }
+
+def save_contact_sheet_settings(*values):
+    values, lang = _contact_sheet_values_and_lang(values)
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    settings = _contact_sheet_settings_from_inputs(*values)
+    save_ui_settings_value("contact_sheet_settings", settings)
+    info = t.get("contact_status_saved_info", "✅ Réglages de planche sauvegardés.")
+    gr.Info(info)
+    return t.get("contact_status_saved", "✅ Réglages sauvegardés pour les prochaines sessions.")
+
+def _contact_sheet_display_name(item):
+    name = str(item.get("display_name") or item.get("rel_path") or item.get("img_name") or "")
+    return os.path.splitext(os.path.basename(name.replace("\\", "/")))[0]
+
+def _contact_sheet_sort_name(item):
+    return str(item.get("sort_name") or item.get("rel_path") or item.get("display_name") or item.get("img_name") or "")
+
+def _contact_sheet_source_items(filtered_dataset, selected_ids, source_mode, ignore_gallery_sort):
+    """
+    Récupère les items à compiler.
+    - Respecte l'ordre de filtered_dataset (trié par galerie) par défaut
+    - Si ignore_gallery_sort=True : applique un tri alphabétique local
+    """
+    items = list(filtered_dataset or [])
+    if source_mode == "Sélection multi":
+        selected = {int(x) for x in (selected_ids or []) if str(x).strip().lstrip("-").isdigit()}
+        items = [item for item in items if int(item.get("id", -1)) in selected]
+    if ignore_gallery_sort:
+        # Forcer un tri local alphabétique, ignorant le tri de la galerie
+        items = sorted(items, key=lambda item: natural_sort_key(_contact_sheet_sort_name(item)))
+    return items
+
+def _contact_sheet_batches(items, settings):
+    if settings.get("limit_enabled"):
+        per_sheet = max(1, int(settings.get("images_per_sheet") or 1))
+        return [items[i:i + per_sheet] for i in range(0, len(items), per_sheet)]
+    return [items] if items else []
+
+def _contact_sheet_preview_cache_key(path, bg_rgb, preview_thumb_size):
+    try:
+        stat = os.stat(path)
+        return (os.path.abspath(path), stat.st_mtime_ns, stat.st_size, tuple(bg_rgb), int(preview_thumb_size))
+    except Exception:
+        return None
+
+def _remember_contact_sheet_preview(key, image):
+    if not key:
+        return
+    CONTACT_SHEET_PREVIEW_IMAGE_CACHE[key] = image.copy()
+    while len(CONTACT_SHEET_PREVIEW_IMAGE_CACHE) > CONTACT_SHEET_PREVIEW_IMAGE_CACHE_MAX:
+        CONTACT_SHEET_PREVIEW_IMAGE_CACHE.pop(next(iter(CONTACT_SHEET_PREVIEW_IMAGE_CACHE)), None)
+
+def _load_contact_sheet_image(path, bg_rgb, fast_preview=False, preview_thumb_size=900):
+    preview_thumb_size = max(160, int(preview_thumb_size or 900))
+    cache_key = _contact_sheet_preview_cache_key(path, bg_rgb, preview_thumb_size) if fast_preview else None
+    if cache_key and cache_key in CONTACT_SHEET_PREVIEW_IMAGE_CACHE:
+        return CONTACT_SHEET_PREVIEW_IMAGE_CACHE[cache_key].copy()
+
+    img = Image.open(path)
+    if fast_preview:
+        img.thumbnail((preview_thumb_size, preview_thumb_size), Image.Resampling.NEAREST)
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        base = Image.new("RGB", img.size, bg_rgb)
+        base.paste(img, (0, 0), img.convert("RGBA"))
+        _remember_contact_sheet_preview(cache_key, base)
+        return base
+    converted = img.convert("RGB")
+    _remember_contact_sheet_preview(cache_key, converted)
+    return converted
+
+def generate_contact_sheet_pil(items, settings, fast_preview=False, start_number=1, preview_max_width=1200, preview_thumb_size=900):
+    bg_rgb = _hex_to_rgb(settings.get("background", "#00ff00"))
+    output_width = int(settings["output_width"])
+    spacing = int(settings["spacing"])
+    margin = int(settings["margin"])
+    cols = max(1, int(settings["images_per_row"]))
+    font_size = int(settings["font_size"])
+
+    if fast_preview and output_width > preview_max_width:
+        preview_max_width = max(320, int(preview_max_width or 1200))
+        scale_preview = preview_max_width / float(output_width)
+        output_width = preview_max_width
+        spacing = max(0, int(spacing * scale_preview))
+        margin = max(0, int(margin * scale_preview))
+        font_size = max(8, int(font_size * scale_preview))
+
+    valid = []
+    for item in items:
+        path = item.get("img_path")
+        if not path or not os.path.exists(path):
+            continue
+        try:
+            # Stocker l'item complet (permet accès à caption, name, id, etc.)
+            valid.append((_load_contact_sheet_image(path, bg_rgb, fast_preview, preview_thumb_size), item))
+        except Exception as e:
+            print(f"⚠️ Planche: impossible de charger {path}: {e}")
+    if not valid:
+        err = Image.new("RGB", (max(320, output_width), 220), bg_rgb)
+        ImageDraw.Draw(err).text((20, 20), "Aucune image valide à afficher", fill=(255, 255, 255))
+        return err
+
+    available_width = output_width - (2 * margin) - ((cols - 1) * spacing)
+    col_width = max(10, available_width // cols)
+    ratio = settings["ratio"]
+    fit_mode = settings["fit_mode"]
+    is_variable = "variable" in ratio.lower()
+    resample = Image.Resampling.BILINEAR if fast_preview else Image.Resampling.LANCZOS
+    target_h = col_width
+    if not is_variable:
+        if "1:1" in ratio:
+            target_h = col_width
+        elif "4:3" in ratio:
+            target_h = int(col_width * 3 / 4)
+        elif "16:9" in ratio:
+            target_h = int(col_width * 9 / 16)
+        elif "3:4" in ratio:
+            target_h = int(col_width * 4 / 3)
+        elif "9:16" in ratio:
+            target_h = int(col_width * 16 / 9)
+
+    thumbs = []
+    for img, item in valid:
+        if is_variable:
+            ratio_scale = col_width / float(max(1, img.width))
+            thumb_h = max(1, int(img.height * ratio_scale))
+            thumb = img.resize((col_width, thumb_h), resample)
+        elif "Crop" in fit_mode:
+            thumb = ImageOps.fit(img, (col_width, target_h), resample)
+        else:
+            thumb = ImageOps.pad(img, (col_width, target_h), method=resample, color=bg_rgb)
+        thumbs.append((thumb, item))
+
+    rows = math.ceil(len(thumbs) / cols)
+    placements = []
+    if is_variable:
+        row_heights = []
+        for row in range(rows):
+            row_thumbs = thumbs[row * cols:(row + 1) * cols]
+            row_heights.append(max((thumb.height for thumb, _ in row_thumbs), default=1))
+        final_height = (2 * margin) + sum(row_heights) + max(0, rows - 1) * spacing
+        for index, (thumb, item) in enumerate(thumbs):
+            row = index // cols
+            col = index % cols
+            x = margin + col * (col_width + spacing)
+            y_base = margin + sum(row_heights[:row]) + row * spacing
+            y = y_base + (row_heights[row] - thumb.height) // 2
+            placements.append((x, y, thumb, item))
+    else:
+        final_height = (2 * margin) + (rows * target_h) + max(0, rows - 1) * spacing
+        for index, (thumb, item) in enumerate(thumbs):
+            row = index // cols
+            col = index % cols
+            x = margin + col * (col_width + spacing)
+            y = margin + row * (target_h + spacing)
+            placements.append((x, y, thumb, item))
+
+    sheet = Image.new("RGB", (output_width, max(1, final_height)), bg_rgb)
+    for x, y, thumb, _ in placements:
+        sheet.paste(thumb, (x, y))
+
+    label_mode = settings["label_mode"]
+    if label_mode != "Aucun":
+        overlay = Image.new("RGBA", sheet.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except IOError:
+            font = ImageFont.load_default()
+        alpha_bg = int((_safe_float(settings.get("label_opacity"), 70, 0, 100) / 100.0) * 255)
+        for x, y, _, item in placements:
+            item_id = int(item.get("id", -1))
+            # Choisir le texte du label selon le mode
+            if "Numérotation" in label_mode:
+                text = str(item_id + 1)
+            elif "Captions" in label_mode:
+                # Première ligne du caption
+                caption = item.get("caption", "").strip()
+                text = caption.split('\n')[0][:60] if caption else ""  # Max 60 chars
+            else:
+                # Nom du fichier (par défaut)
+                text = _contact_sheet_display_name(item)
+            if not text:
+                continue
+            tx = x + max(5, col_width // 40)
+            ty = y + max(5, col_width // 40)
+            try:
+                bbox = draw.textbbox((tx, ty), text, font=font)
+                draw.rectangle([bbox[0] - 4, bbox[1] - 2, bbox[2] + 4, bbox[3] + 2], fill=(0, 0, 0, alpha_bg))
+            except Exception:
+                pass
+            draw.text((tx, ty), text, fill=(255, 255, 255, 255), font=font)
+        sheet = Image.alpha_composite(sheet.convert("RGBA"), overlay).convert("RGB")
+
+    # Appliquer le resize final si spécifié
+    resize_percent = int(settings.get("resize_final", 100))
+    if resize_percent != 100:
+        new_width = max(256, int(sheet.width * resize_percent / 100))
+        new_height = int(sheet.height * resize_percent / 100)
+        sheet = sheet.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+    return sheet
+
+def _contact_sheet_status_text(items, batches, settings, preview=False, lang="FR"):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    mode = t.get("contact_status_mode_preview", "aperçu") if preview else t.get("contact_status_mode_export", "export")
+    per_sheet = settings.get("images_per_sheet") if settings.get("limit_enabled") else len(items)
+    template = t.get("contact_status_summary", "✅ {items} image(s) · {sheets} planche(s) · {per_sheet} image(s)/planche · {per_row} par ligne · mode {mode}.")
+    return template.format(
+        items=len(items),
+        sheets=len(batches),
+        per_sheet=per_sheet,
+        per_row=settings["images_per_row"],
+        mode=mode,
+    )
+
+def preview_contact_sheets(filtered_dataset, selected_ids, *values):
+    values, lang = _contact_sheet_values_and_lang(values)
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    settings = _contact_sheet_settings_from_inputs(*values)
+    items = _contact_sheet_source_items(filtered_dataset, selected_ids, settings["source_mode"], settings["sort_alpha"])
+    if not items:
+        return [], t.get("contact_status_no_images", "⚠️ Aucune image à compiler. Vérifie la galerie filtrée ou la sélection multi.")
+    batches = _contact_sheet_batches(items, settings)
+    previews = []
+    offset = 0
+    for batch in batches:
+        start = offset + 1 if settings["continue_numbering"] else 1
+        previews.append(generate_contact_sheet_pil(batch, settings, fast_preview=True, start_number=start))
+        offset += len(batch)
+    return previews, _contact_sheet_status_text(items, batches, settings, preview=True, lang=lang)
+
+def preview_contact_sheet_live(filtered_dataset, selected_ids, *values):
+    """Aperçu live : génère juste la 1ère planche pour vérifier la mise en forme."""
+    values, lang = _contact_sheet_values_and_lang(values)
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    settings = _contact_sheet_settings_from_inputs(*values)
+    items = _contact_sheet_source_items(filtered_dataset, selected_ids, settings["source_mode"], settings["sort_alpha"])
+    if not items:
+        return [], t.get("contact_status_no_images", "⚠️ Aucune image à compiler. Vérifie la galerie filtrée ou la sélection multi.")
+    # Générer juste la 1ère planche (ou premier batch)
+    batches = _contact_sheet_batches(items, settings)
+    if batches:
+        preview = generate_contact_sheet_pil(
+            batches[0],
+            settings,
+            fast_preview=True,
+            start_number=1,
+            preview_max_width=900,
+            preview_thumb_size=640,
+        )
+        status = t.get("contact_status_live", "✅ Aperçu live : {images} images · {sheets} planche(s) au total. Clic 'Générer l'aperçu' pour voir toutes.").format(images=len(batches[0]), sheets=len(batches))
+        return [preview], status
+    return [], t.get("contact_status_empty", "⚠️ Aucune image à compiler.")
+
+def export_contact_sheets(filtered_dataset, selected_ids, dataset_dir, *values):
+    values, lang = _contact_sheet_values_and_lang(values)
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    settings = _contact_sheet_settings_from_inputs(*values)
+    items = _contact_sheet_source_items(filtered_dataset, selected_ids, settings["source_mode"], settings["sort_alpha"])
+    if not items:
+        return [], t.get("contact_status_no_export", "⚠️ Aucune image à exporter. Vérifie la galerie filtrée ou la sélection multi.")
+    batches = _contact_sheet_batches(items, settings)
+    dataset_dir = normalize_dataset_path(dataset_dir)
+    output_dir = settings["output_dir"]
+    if not output_dir:
+        output_dir = os.path.join(dataset_dir, "planches_compilation") if dataset_dir else os.path.join(APP_DIR, "planches_compilation")
+    output_dir = normalize_dataset_path(output_dir, allow_file_parent=False) or output_dir
+    os.makedirs(output_dir, exist_ok=True)
+    fmt = settings["export_format"].upper()
+    ext = ".jpg" if fmt == "JPEG" else (".webp" if fmt == "WEBP" else ".png")
+    save_format = "JPEG" if fmt == "JPEG" else ("WEBP" if fmt == "WEBP" else "PNG")
+    paths = []
+    offset = 0
+    for page_idx, batch in enumerate(batches, start=1):
+        start = offset + 1 if settings["continue_numbering"] else 1
+        sheet = generate_contact_sheet_pil(batch, settings, fast_preview=False, start_number=start)
+        path = os.path.join(output_dir, f"{settings['filename_prefix']}_{page_idx}{ext}")
+        if save_format in ("JPEG", "WEBP"):
+            sheet.save(path, save_format, quality=int(settings["quality"]), optimize=True)
+        else:
+            sheet.save(path, save_format)
+        paths.append(path)
+        offset += len(batch)
+    msg = t.get("contact_status_exported", "✅ {count} planche(s) exportée(s) dans : {output_dir}").format(count=len(paths), output_dir=output_dir)
+    gr.Info(msg)
+    return paths, msg
 
 def get_gradio_allowed_paths():
     """Autorise Gradio à servir les images depuis les lecteurs locaux.
@@ -3824,12 +4585,18 @@ def import_captions_csv(csv_file, dataset, lang):
             reader = csv_mod.DictReader(f, delimiter=delim)
             rows = list(reader)
         name_to_item = {item['img_name']: item for item in dataset}
+        basename_to_items = {}
+        for item in dataset:
+            basename_to_items.setdefault(os.path.basename(item.get('img_name', '')), []).append(item)
         count = 0
         for row in rows:
             filename = (row.get('Fichier') or row.get('File') or row.get('fichier') or '').strip()
             caption = (row.get('Caption') or row.get('caption') or '').strip()
-            if filename in name_to_item and caption:
-                item = name_to_item[filename]
+            item = name_to_item.get(filename)
+            if item is None:
+                basename_matches = basename_to_items.get(os.path.basename(filename), [])
+                item = basename_matches[0] if len(basename_matches) == 1 else None
+            if item is not None and caption:
                 item['caption'] = caption
                 dataset[item['id']]['caption'] = caption
                 with open(item['txt_path'], 'w', encoding='utf-8') as f:
@@ -3869,12 +4636,18 @@ def import_captions_md(md_file, dataset, lang):
         src = md_file if isinstance(md_file, str) else (md_file.name if hasattr(md_file, "name") else str(md_file))
         rows = _parse_captions_md(src)
         name_to_item = {item['img_name']: item for item in dataset}
+        basename_to_items = {}
+        for item in dataset:
+            basename_to_items.setdefault(os.path.basename(item.get('img_name', '')), []).append(item)
         count = 0
         for row in rows:
             filename = (row.get('Fichier') or '').strip()
             caption = (row.get('Caption') or '').strip()
-            if filename in name_to_item and caption:
-                item = name_to_item[filename]
+            item = name_to_item.get(filename)
+            if item is None:
+                basename_matches = basename_to_items.get(os.path.basename(filename), [])
+                item = basename_matches[0] if len(basename_matches) == 1 else None
+            if item is not None and caption:
                 item['caption'] = caption
                 dataset[item['id']]['caption'] = caption
                 with open(item['txt_path'], 'w', encoding='utf-8') as f:
@@ -3893,6 +4666,20 @@ def import_captions_file(caption_file, dataset, lang):
     if ext == ".md":
         return import_captions_md(caption_file, dataset, lang)
     return import_captions_csv(caption_file, dataset, lang)
+
+def _sync_filtered_from_dataset(dataset, filtered_dataset):
+    if not dataset or not filtered_dataset:
+        return filtered_dataset or []
+    by_id = {item.get('id'): item for item in dataset if isinstance(item, dict)}
+    return [by_id.get(item.get('id'), item) for item in filtered_dataset if isinstance(item, dict)]
+
+def import_captions_file_refresh(caption_file, dataset, filtered_dataset, idx, tracked_words, lang):
+    dataset, msg = import_captions_file(caption_file, dataset, lang)
+    filtered_dataset = _sync_filtered_from_dataset(dataset, filtered_dataset)
+    if (not filtered_dataset) and dataset:
+        filtered_dataset = dataset
+    img_path, hl_html, cap, wc, c_idx, v_status = update_viewer(filtered_dataset, idx, tracked_words, lang)
+    return dataset, filtered_dataset, get_gallery_items(filtered_dataset, lang), img_path, hl_html, cap, wc, c_idx, v_status, extract_all_tags(dataset), msg
 
 # ==========================================
 # COPIER CAPTION VERS L'IMAGE SUIVANTE (Ctrl+D)
@@ -6512,7 +7299,21 @@ def _compact_select_all_label(label, lang="FR"):
 def _compact_multi_select_label(label, lang="FR"):
     return "✅ Multi"
 
-def change_language(lang, stats_df, config_df, lib_state, current_strategy):
+def include_subfolders_label(enabled, lang):
+    t = UI_T.get(lang, UI_T.get("FR", {}))
+    key = "include_subfolders_on" if enabled else "include_subfolders_off"
+    fallback = "📁 Sous-dossiers : ON" if lang == "FR" and enabled else "📁 Sous-dossiers : OFF" if lang == "FR" else "📁 Subfolders: ON" if enabled else "📁 Subfolders: OFF"
+    return t.get(key, fallback)
+
+def toggle_include_subfolders(enabled, lang):
+    enabled = not bool(enabled)
+    return enabled, gr.update(value=include_subfolders_label(enabled, lang))
+
+def change_language(
+    lang, stats_df, config_df, lib_state, current_strategy, include_subfolders_enabled=False,
+    contact_source_value=None, contact_ratio_mode_value=None, contact_fit_value=None,
+    contact_label_value=None, contact_format_value=None,
+):
     t = UI_T.get(lang, UI_T.get("FR", {})) 
     m = MSG.get(lang, MSG.get("FR", {}))
     new_stats = stats_df
@@ -6547,6 +7348,7 @@ def change_language(lang, stats_df, config_df, lib_state, current_strategy):
         gr.update(value=render_dataset_drop_zone(lang)),
         gr.update(value=t.get("browse", "")),
         gr.update(value=t.get("load", "")),
+        gr.update(value=include_subfolders_label(include_subfolders_enabled, lang)),
         gr.update(value=t.get("status_wait", "")),
         
         gr.update(value=t.get("recipe_global", "")),
@@ -6731,6 +7533,45 @@ def change_language(lang, stats_df, config_df, lib_state, current_strategy):
         gr.update(value=t.get("csv_acc_hint", "")),
         gr.update(value=t.get("btn_export_csv_captions", "⬇️ Exporter CSV")),
         gr.update(value=t.get("btn_import_csv_captions", "⬆️ Importer CSV")),
+        gr.update(label=t.get("csv_import_dropzone", "📥 Déposer le CSV/MD rempli ici")),
+        gr.update(value=t.get("btn_export_md_captions", "⬇️ Exporter MD")),
+        gr.update(value=t.get("btn_import_md_captions", "⬆️ Importer MD rempli")),
+        gr.update(value=t.get("csv_contact_hint", "**💡 Ou créer directement des planches de compilation** (aperçu et export depuis l'onglet dédié)")),
+        gr.update(value=t.get("btn_open_contact_sheet", "🖼️ Créer planche(s) compilation")),
+
+        gr.update(label=t.get("contact_tab_title", "🖼️ Planche(s) compilation(s)")),
+        gr.update(label=t.get("contact_source_label", "📸 Images à compiler"), choices=_contact_source_choices(lang), value=_valid_choice_value(contact_source_value, CONTACT_SHEET_SOURCE_CHOICES, CONTACT_SHEET_DEFAULTS["source_mode"])),
+        gr.update(value=t.get("contact_btn_preview", "👁️ Aperçu")),
+        gr.update(value=t.get("contact_btn_export", "🚀 Exporter")),
+        gr.update(label=t.get("contact_layout_acc", "📐 Mise en page")),
+        gr.update(label=t.get("contact_output_width", "Largeur finale (px)")),
+        gr.update(label=t.get("contact_flexible", "🔄 Flexible (auto-colonnes)")),
+        gr.update(label=t.get("contact_images_per_row", "Colonnes")),
+        gr.update(label=t.get("contact_spacing", "Espacement (px)")),
+        gr.update(label=t.get("contact_margin", "Marge (px)")),
+        gr.update(label=t.get("contact_background", "Couleur fond")),
+        gr.update(label=t.get("contact_format_acc", "🖼️ Format images")),
+        gr.update(label=t.get("contact_ratio_label", "Rapport d'aspect"), choices=_contact_ratio_mode_choices(lang), value=_valid_choice_value(contact_ratio_mode_value, CONTACT_SHEET_RATIO_MODE_CHOICES, CONTACT_SHEET_RATIO_MODE_CHOICES[0])),
+        gr.update(label=t.get("contact_fit_mode", "Remplissage"), choices=_contact_fit_choices(lang), value=_valid_choice_value(contact_fit_value, CONTACT_SHEET_FIT_CHOICES, CONTACT_SHEET_DEFAULTS["fit_mode"])),
+        gr.update(label=t.get("contact_sort_alpha", "↪️ Ignorer le tri de la galerie")),
+        gr.update(label=t.get("contact_text_acc", "🔤 Texte & Labels")),
+        gr.update(label=t.get("contact_label_mode", "Type de label"), choices=_contact_label_choices(lang), value=_valid_choice_value(contact_label_value, CONTACT_SHEET_LABEL_CHOICES, CONTACT_SHEET_DEFAULTS["label_mode"])),
+        gr.update(label=t.get("contact_font_size", "Taille police (px)")),
+        gr.update(label=t.get("contact_label_opacity", "Opacité fond (%)")),
+        gr.update(label=t.get("contact_export_acc", "⚙️ Export avancé")),
+        gr.update(label=t.get("contact_multi_sheets", "📚 Multiples planches")),
+        gr.update(label=t.get("contact_images_per_sheet", "Images par planche")),
+        gr.update(label=t.get("contact_continue_numbering", "↪️ Continuer numérotation")),
+        gr.update(label=t.get("contact_output_dir", "Dossier sortie"), placeholder=t.get("contact_output_dir_ph", "= dataset/planches_compilation")),
+        gr.update(label=t.get("contact_filename_prefix", "Préfixe fichier")),
+        gr.update(label=t.get("contact_export_format", "Format"), choices=_contact_format_choices(lang), value=_valid_choice_value(contact_format_value, CONTACT_SHEET_FORMAT_CHOICES, CONTACT_SHEET_DEFAULTS["export_format"])),
+        gr.update(label=t.get("contact_quality", "Qualité")),
+        gr.update(label=t.get("contact_resize_final", "🔍 Resize final (%)")),
+        gr.update(value=t.get("contact_btn_save", "💾 Sauvegarder")),
+        gr.update(value=t.get("contact_status_loading", "⏳ Chargement...")),
+        gr.update(value=f"### {t.get('contact_preview_title', '👁️ Aperçu live')}"),
+        gr.update(value=t.get("contact_preview_back", "🔄 Planche témoin")),
+        gr.update(label=t.get("contact_preview_exported", "📥 Fichiers exportés")),
     )
 
 # ==========================================
@@ -6742,7 +7583,7 @@ if get_gradio_major_version() < 6:
     blocks_kwargs["css"] = css_code
 
 with gr.Blocks(**blocks_kwargs) as app:
-    
+
     dataset_state = gr.State([])
     filtered_state = gr.State([])
     history_state = gr.State([])
@@ -6751,6 +7592,7 @@ with gr.Blocks(**blocks_kwargs) as app:
     config_df_state = gr.State("{}") 
     stats_df_state = gr.State("{}")
     recipe_selected_row = gr.State(-1)
+    include_subfolders_state = gr.State(False)
     
     # State pour la bibliothèque Custom HTML
     initial_library = load_library()
@@ -6786,6 +7628,7 @@ with gr.Blocks(**blocks_kwargs) as app:
     t_init = UI_T.get(default_lang, UI_T.get("FR", {}))
     ai_settings_init = load_ai_settings()
     ui_settings_init = load_ui_settings()
+    contact_settings_init = load_contact_sheet_settings()
 
     with gr.Row(elem_id="top_workspace"):
         with gr.Column(scale=2, elem_id="dataset_header"):
@@ -6814,6 +7657,11 @@ with gr.Blocks(**blocks_kwargs) as app:
                     with gr.Row(elem_id="dataset_path_row"):
                         dir_input = gr.Textbox(placeholder="C:\\mon\\dataset, D:\\autre\\concept, ~/datasets/portrait, ...", show_label=False, scale=4, elem_id="dataset_dir_input")
                         ui_browse_btn = gr.Button(t_init.get("browse", ""), scale=1)
+                    ui_include_subfolders = gr.Button(
+                        include_subfolders_label(False, default_lang),
+                        variant="secondary",
+                        elem_id="include_subfolders_btn",
+                    )
                     ui_recent_paths_dd = gr.Dropdown(choices=_init_recents, label=t_init.get("recent_paths_dd", "Chemins récents"), interactive=True, allow_custom_value=False, value=None)
                     ui_fav_section_title = gr.Accordion(t_init.get("fav_section_title", "⭐ Favoris"), open=False)
                     with ui_fav_section_title:
@@ -6861,26 +7709,34 @@ with gr.Blocks(**blocks_kwargs) as app:
                 ui_clear_sel_btn = gr.Button(t_init.get("clear_sel", ""), elem_id="clear_sel_btn", size="sm", scale=1)
                 
             ui_selection_status = gr.Markdown("", elem_id="ui_selection_status")
-            ui_csv_acc = gr.Accordion(t_init.get("csv_acc_title", "📋 Import / Export CSV"), open=False, elem_id="gallery_csv_acc")
+            ui_csv_acc = gr.Accordion(t_init.get("csv_acc_title", "📋 Import / Export CSV (IA Captioning)"), open=False, elem_id="gallery_csv_acc")
             with ui_csv_acc:
+                # Texte explicatif de l'usage de l'encart
                 ui_csv_hint = gr.Markdown(t_init.get("csv_acc_hint", ""))
-                with gr.Row(elem_id="csv_actions_row"):
-                    ui_btn_export_csv_captions = gr.Button(t_init.get("btn_export_csv_captions", "⬇️ Exporter CSV"), scale=1, size="sm")
-                    ui_btn_import_csv_captions = gr.Button(t_init.get("btn_import_csv_captions", "⬆️ Importer CSV"), scale=1, size="sm")
-                with gr.Row(elem_id="md_actions_row"):
-                    ui_btn_export_md_captions = gr.Button("⬇️ Export captions MD", scale=1, size="sm")
-                    ui_btn_import_md_captions = gr.Button("⬆️ Import filled MD", scale=1, size="sm")
+                # Dropzone en haut pour drag/drop
                 ui_csv_import_file = gr.File(
-                    label="Drop filled CSV/MD / Déposez le CSV/MD rempli",
+                    label=t_init.get("csv_import_dropzone", "📥 Drop filled CSV/MD here"),
                     file_types=[".csv", ".md"],
                     file_count="single",
                     type="filepath",
                     visible=True,
                     elem_id="caption_import_dropzone",
+                    min_width=200,
                 )
+                # Boutons compacts en grille 2x2
+                with gr.Row():
+                    ui_btn_export_csv_captions = gr.Button(t_init.get("btn_export_csv_captions", "⬇️ Export captions CSV"), scale=1, size="sm", variant="secondary")
+                    ui_btn_export_md_captions = gr.Button(t_init.get("btn_export_md_captions", "⬇️ Export captions MD"), scale=1, size="sm", variant="secondary")
+                with gr.Row():
+                    ui_btn_import_csv_captions = gr.Button(t_init.get("btn_import_csv_captions", "⬆️ Import filled CSV"), scale=1, size="sm")
+                    ui_btn_import_md_captions = gr.Button(t_init.get("btn_import_md_captions", "⬆️ Import filled MD"), scale=1, size="sm")
                 ui_csv_status = gr.Markdown()
+                # Texte explicatif et bouton Créer planche
+                ui_csv_contact_hint = gr.Markdown(t_init.get("csv_contact_hint", "**💡 Or create contact sheets directly** (preview and export from the dedicated tab)"))
+                with gr.Row():
+                    ui_btn_open_contact_sheet = gr.Button(t_init.get("btn_open_contact_sheet", "🖼️ Create contact sheet(s)"), variant="primary", size="sm", scale=1)
             initial_gallery_cols = int(ui_settings_init.get("gallery_columns", DEFAULT_UI_SETTINGS["gallery_columns"]))
-            ui_gallery_cols = gr.Slider(minimum=1, maximum=6, step=1, value=initial_gallery_cols, label=t_init.get("cols", ""), interactive=True)
+            ui_gallery_cols = gr.Slider(minimum=1, maximum=6, step=1, value=initial_gallery_cols, label=t_init.get("cols", ""), interactive=True, elem_id="gallery_cols_slider")
             gallery = gr.Gallery(label="Dataset", columns=initial_gallery_cols, rows=6, height=750, object_fit="cover", allow_preview=False, elem_id="main_gallery")
             
         with gr.Column(scale=1, elem_id="center_panel"):
@@ -7206,6 +8062,85 @@ with gr.Blocks(**blocks_kwargs) as app:
                                     txt_contra = gr.Textbox(label=t_init.get("contra_title", ""), lines=6, interactive=False)
                                     ui_contra_help = gr.Markdown(t_init.get("contra_help", ""))
 
+                ui_tab_contact = gr.Tab(t_init.get("contact_tab_title", "🖼️ Planche(s) compilation(s)"))
+                with ui_tab_contact:
+                    with gr.Row():
+                        with gr.Column(scale=1, min_width=300, elem_id="contact_sheet_controls"):
+                            # === SOURCE & ACTIONS PRINCIPALES ===
+                            contact_source_mode = gr.Radio(
+                                _contact_source_choices(default_lang),
+                                value=_valid_choice_value(contact_settings_init["source_mode"], CONTACT_SHEET_SOURCE_CHOICES, CONTACT_SHEET_DEFAULTS["source_mode"]),
+                                label=t_init.get("contact_source_label", "📸 Images à compiler"),
+                            )
+
+                            with gr.Row():
+                                contact_btn_preview = gr.Button(t_init.get("contact_btn_preview", "👁️ Aperçu"), variant="secondary", scale=1)
+                                contact_btn_export = gr.Button(t_init.get("contact_btn_export", "🚀 Exporter"), variant="primary", scale=1)
+
+                            # === PARAMÈTRES EN ACCORDÉONS (fermés par défaut pour compacité) ===
+                            contact_layout_acc = gr.Accordion(t_init.get("contact_layout_acc", "📐 Mise en page"), open=False)
+                            with contact_layout_acc:
+                                contact_output_width = gr.Number(value=contact_settings_init["output_width"], label=t_init.get("contact_output_width", "Largeur finale (px)"), precision=0)
+                                with gr.Row():
+                                    contact_flexible_cols = gr.Checkbox(value=False, label=t_init.get("contact_flexible", "🔄 Flexible (auto-colonnes)"), scale=2)
+                                    contact_images_per_row = gr.Slider(1, 24, value=contact_settings_init["images_per_row"], step=1, label=t_init.get("contact_images_per_row", "Colonnes"), scale=1)
+                                contact_spacing = gr.Slider(0, 100, value=contact_settings_init["spacing"], step=5, label=t_init.get("contact_spacing", "Espacement (px)"))
+                                contact_margin = gr.Slider(0, 200, value=contact_settings_init["margin"], step=10, label=t_init.get("contact_margin", "Marge (px)"))
+                                contact_background = gr.ColorPicker(value=contact_settings_init["background"], label=t_init.get("contact_background", "Couleur fond"))
+
+                            contact_format_acc = gr.Accordion(t_init.get("contact_format_acc", "🖼️ Format images"), open=False)
+                            with contact_format_acc:
+                                contact_ratio_mode = gr.Radio(
+                                    _contact_ratio_mode_choices(default_lang),
+                                    value=_contact_ratio_mode_from_setting(contact_settings_init["ratio"]),
+                                    label=t_init.get("contact_ratio_label", "Rapport d'aspect")
+                                )
+                                contact_fit_mode = gr.Dropdown(
+                                    _contact_fit_choices(default_lang),
+                                    value=_valid_choice_value(contact_settings_init["fit_mode"], CONTACT_SHEET_FIT_CHOICES, CONTACT_SHEET_DEFAULTS["fit_mode"]),
+                                    label=t_init.get("contact_fit_mode", "Remplissage"),
+                                )
+                                contact_sort_alpha = gr.Checkbox(value=contact_settings_init["sort_alpha"], label=t_init.get("contact_sort_alpha", "↪️ Ignorer le tri de la galerie"))
+
+                            contact_text_acc = gr.Accordion(t_init.get("contact_text_acc", "🔤 Texte & Labels"), open=False)
+                            with contact_text_acc:
+                                contact_label_mode = gr.Dropdown(
+                                    _contact_label_choices(default_lang),
+                                    value=_valid_choice_value(contact_settings_init["label_mode"], CONTACT_SHEET_LABEL_CHOICES, CONTACT_SHEET_DEFAULTS["label_mode"]),
+                                    label=t_init.get("contact_label_mode", "Type de label"),
+                                )
+                                contact_font_size = gr.Slider(8, 200, value=contact_settings_init["font_size"], step=5, label=t_init.get("contact_font_size", "Taille police (px)"))
+                                contact_label_opacity = gr.Slider(0, 100, value=contact_settings_init["label_opacity"], step=10, label=t_init.get("contact_label_opacity", "Opacité fond (%)"))
+
+                            contact_export_acc = gr.Accordion(t_init.get("contact_export_acc", "⚙️ Export avancé"), open=False)
+                            with contact_export_acc:
+                                contact_limit_enabled = gr.Checkbox(value=contact_settings_init["limit_enabled"], label=t_init.get("contact_multi_sheets", "📚 Multiples planches"))
+                                contact_images_per_sheet = gr.Number(value=contact_settings_init["images_per_sheet"], label=t_init.get("contact_images_per_sheet", "Images par planche"), precision=0)
+                                contact_continue_numbering = gr.Checkbox(value=contact_settings_init["continue_numbering"], label=t_init.get("contact_continue_numbering", "↪️ Continuer numérotation"))
+                                contact_output_dir = gr.Textbox(value=contact_settings_init["output_dir"], label=t_init.get("contact_output_dir", "Dossier sortie"), placeholder=t_init.get("contact_output_dir_ph", "= dataset/planches_compilation"))
+                                contact_filename_prefix = gr.Textbox(value=contact_settings_init["filename_prefix"], label=t_init.get("contact_filename_prefix", "Préfixe fichier"))
+                                with gr.Row():
+                                    contact_export_format = gr.Dropdown(
+                                        _contact_format_choices(default_lang),
+                                        value=_valid_choice_value(contact_settings_init["export_format"], CONTACT_SHEET_FORMAT_CHOICES, CONTACT_SHEET_DEFAULTS["export_format"]),
+                                        label=t_init.get("contact_export_format", "Format"),
+                                        scale=1,
+                                    )
+                                    contact_quality = gr.Slider(1, 100, value=contact_settings_init["quality"], step=5, label=t_init.get("contact_quality", "Qualité"), scale=1)
+                                contact_resize_final = gr.Slider(25, 200, value=100, step=25, label=t_init.get("contact_resize_final", "🔍 Resize final (%)"))
+
+                            contact_btn_save_settings = gr.Button(t_init.get("contact_btn_save", "💾 Sauvegarder"), variant="secondary", size="sm")
+                            contact_status = gr.Markdown(t_init.get("contact_status_loading", "⏳ Chargement..."))
+
+                        with gr.Column(scale=2, elem_id="contact_sheet_preview_panel"):
+                            with gr.Row():
+                                with gr.Column(scale=2):
+                                    contact_preview_title = gr.Markdown(f"### {t_init.get('contact_preview_title', '👁️ Aperçu live')}")
+                                with gr.Column(scale=1):
+                                    contact_btn_back_to_live = gr.Button(t_init.get("contact_preview_back", "🔄 Planche témoin"), variant="secondary", size="sm")
+                            contact_preview_gallery = gr.Gallery(label="", columns=1, rows=1, height="auto", object_fit="contain", allow_preview=False, elem_id="contact_preview_live")
+                            contact_export_files = gr.File(label=t_init.get("contact_preview_exported", "📥 Fichiers exportés"), file_count="multiple", interactive=False)
+
         with gr.Column(scale=0, elem_id="right_panel") as right_panel:
             ui_lib_title = gr.HTML(t_init.get("lib_title", ""))
             
@@ -7225,7 +8160,7 @@ with gr.Blocks(**blocks_kwargs) as app:
             gr.Markdown("---")
             ui_lib_list_title = gr.Markdown(t_init.get("lib_list_title", ""))
             
-            ui_lib_html = gr.HTML(render_lib_html(initial_library, "FR"))
+            ui_lib_html = gr.HTML(render_lib_html(initial_library, default_lang))
 
 # ==========================================
 # CÂBLAGE DES ÉVÉNEMENTS
@@ -7233,9 +8168,12 @@ with gr.Blocks(**blocks_kwargs) as app:
 
     lang_radio.change(
         fn=change_language, 
-        inputs=[lang_radio, ui_stats_table, ui_export_config_df, lib_state, ui_strategy_radio],
+        inputs=[
+            lang_radio, ui_stats_table, ui_export_config_df, lib_state, ui_strategy_radio, include_subfolders_state,
+            contact_source_mode, contact_ratio_mode, contact_fit_mode, contact_label_mode, contact_export_format,
+        ],
         outputs=[
-            ui_title, ui_settings_acc, ui_guide_acc, ui_guide_text, ui_dataset_drop_zone, ui_browse_btn, ui_load_btn, ui_status_text,
+            ui_title, ui_settings_acc, ui_guide_acc, ui_guide_text, ui_dataset_drop_zone, ui_browse_btn, ui_load_btn, ui_include_subfolders, ui_status_text,
             ui_recipe_global, ui_recipes_dropdown, ui_recipe_name, ui_save_recipe_btn, ui_tracked_words, ui_ai_recipe_count, ui_btn_ai_recipe, ui_btn_analyze_recipe,
             ui_gallery_title, ui_search_box, ui_multi_select_cb, ui_select_all_btn, ui_clear_sel_btn, ui_gallery_cols,
             ui_toggle_panel_btn, ui_tab_view, ui_btn_prev, ui_btn_next, ui_btn_delete_current, ui_viewer_shortcuts, ui_toggle_tag_btn,
@@ -7262,7 +8200,90 @@ with gr.Blocks(**blocks_kwargs) as app:
             ui_lm_studio_unload_vlm, ui_lm_studio_unload_llm, ui_lm_studio_unload_shared, ui_lm_studio_save_choices,
             # Nouveaux v4.4
             ui_recent_paths_dd, ui_csv_acc, ui_csv_hint, ui_btn_export_csv_captions, ui_btn_import_csv_captions,
+            ui_csv_import_file, ui_btn_export_md_captions, ui_btn_import_md_captions, ui_csv_contact_hint, ui_btn_open_contact_sheet,
+            # Planche(s) compilation(s)
+            ui_tab_contact, contact_source_mode, contact_btn_preview, contact_btn_export,
+            contact_layout_acc, contact_output_width, contact_flexible_cols, contact_images_per_row,
+            contact_spacing, contact_margin, contact_background, contact_format_acc,
+            contact_ratio_mode, contact_fit_mode, contact_sort_alpha, contact_text_acc,
+            contact_label_mode, contact_font_size, contact_label_opacity, contact_export_acc,
+            contact_limit_enabled, contact_images_per_sheet, contact_continue_numbering,
+            contact_output_dir, contact_filename_prefix, contact_export_format, contact_quality,
+            contact_resize_final, contact_btn_save_settings, contact_status, contact_preview_title,
+            contact_btn_back_to_live, contact_export_files,
         ]
+    )
+
+    # Note: contact_flexible_cols et contact_sort_alpha sont maintenant des Radios (pas des Checkboxes)
+    # Les convertir en booléens pour la fonction
+    contact_sheet_inputs = [
+        contact_source_mode, contact_output_width, contact_flexible_cols, contact_images_per_row, contact_spacing, contact_margin,
+        contact_background, contact_ratio_mode, contact_fit_mode, contact_sort_alpha, contact_label_mode,
+        contact_font_size, contact_label_opacity, contact_limit_enabled, contact_images_per_sheet,
+        contact_continue_numbering, contact_output_dir, contact_filename_prefix, contact_export_format,
+        contact_quality, contact_resize_final, lang_radio,
+    ]
+    contact_btn_save_settings.click(
+        fn=save_contact_sheet_settings,
+        inputs=contact_sheet_inputs,
+        outputs=[contact_status],
+    )
+    contact_btn_preview.click(
+        fn=preview_contact_sheets,
+        inputs=[filtered_state, selected_indices_state] + contact_sheet_inputs,
+        outputs=[contact_preview_gallery, contact_status],
+        show_progress="full",
+    )
+    contact_btn_export.click(
+        fn=export_contact_sheets,
+        inputs=[filtered_state, selected_indices_state, dir_input] + contact_sheet_inputs,
+        outputs=[contact_export_files, contact_status],
+        show_progress="full",
+    )
+
+    def wire_contact_live_preview(component, event_name="input"):
+        getattr(component, event_name)(
+            fn=preview_contact_sheet_live,
+            inputs=[filtered_state, selected_indices_state] + contact_sheet_inputs,
+            outputs=[contact_preview_gallery, contact_status],
+            show_progress=False,
+            trigger_mode="always_last",
+            concurrency_limit=1,
+            concurrency_id="contact_sheet_live_preview",
+        )
+
+    # Live preview : utiliser input/release plutôt que change évite l'attente Gradio perceptible avant rafraîchissement.
+    for component in [
+        contact_source_mode, contact_output_width, contact_flexible_cols, contact_images_per_row,
+        contact_spacing, contact_margin, contact_background, contact_ratio_mode, contact_fit_mode,
+        contact_sort_alpha, contact_label_mode, contact_font_size, contact_label_opacity,
+        contact_resize_final,
+    ]:
+        wire_contact_live_preview(component, "input")
+
+    for component in [contact_images_per_row, contact_spacing, contact_margin, contact_font_size, contact_label_opacity, contact_resize_final, contact_background]:
+        wire_contact_live_preview(component, "release")
+
+    # Événement pour le bouton "Créer planche(s)" du CSV - déclenche le live preview automatiquement
+    ui_btn_open_contact_sheet.click(
+        fn=preview_contact_sheet_live,
+        inputs=[filtered_state, selected_indices_state] + contact_sheet_inputs,
+        outputs=[contact_preview_gallery, contact_status],
+        show_progress=False,
+        trigger_mode="always_last",
+        concurrency_limit=1,
+        concurrency_id="contact_sheet_live_preview",
+    )
+
+    # Événement pour le bouton "Revenir à la planche témoin" - revient au live preview
+    contact_btn_back_to_live.click(
+        fn=preview_contact_sheet_live,
+        inputs=[filtered_state, selected_indices_state] + contact_sheet_inputs,
+        outputs=[contact_preview_gallery, contact_status],
+        show_progress=False,
+        trigger_mode="always_last",
+        concurrency_limit=1,
+        concurrency_id="contact_sheet_live_preview",
     )
 
     def update_lib_ui(mode, lang):
@@ -7285,6 +8306,32 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_toggle_panel_btn.click(fn=None, js=js_toggle)
     js_toggle_right = "function() { const p = document.getElementById('right_panel'); const b = document.getElementById('toggle_right_btn'); if (p.classList.contains('collapsed')) { p.classList.remove('collapsed'); b.innerText = '▶'; } else { p.classList.add('collapsed'); b.innerText = '◀'; } return []; }"
     ui_toggle_right_btn.click(fn=None, js=js_toggle_right)
+    js_open_contact_sheet = """
+    function(){
+        const matches = t => {
+            const text = t.textContent || '';
+            return text.includes('Planche') || text.includes('Contact sheet');
+        };
+        // 1. Onglet visible (exclure le conteneur de mesure caché)
+        let tab = Array.from(document.querySelectorAll('.tab-container:not(.visually-hidden) button[role="tab"]')).find(matches);
+        if (tab) { tab.click(); return []; }
+        // 2. Sinon l'onglet est dans le menu overflow "..." : l'ouvrir puis cliquer l'item
+        const ov = document.querySelector('.overflow-menu > button');
+        if (ov) {
+            ov.click();
+            setTimeout(function(){
+                const item = Array.from(document.querySelectorAll('.overflow-dropdown button')).find(matches);
+                if (item) item.click();
+            }, 80);
+            return [];
+        }
+        // 3. Fallback : n'importe quel bouton role=tab
+        tab = Array.from(document.querySelectorAll('button[role="tab"]')).find(matches);
+        if (tab) tab.click();
+        return [];
+    }
+    """
+    ui_btn_open_contact_sheet.click(fn=None, js=js_open_contact_sheet)
     ui_browse_btn.click(fn=browse_folder, inputs=[], outputs=[dir_input])
     ui_hidden_dataset_path_btn.click(
         fn=set_dataset_path_from_drop,
@@ -7294,11 +8341,16 @@ with gr.Blocks(**blocks_kwargs) as app:
         fn=None,
         js="function(){ const w=document.getElementById('hidden_dataset_path_input'); const v=w?.querySelector('textarea,input')?.value || ''; if(v.startsWith('__RESOLVED_PATH__')) setTimeout(()=>document.getElementById('dataset_load_btn')?.click(), 120); }",
     )
-    ui_gallery_cols.change(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery])
-    ui_gallery_cols.release(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery])
+    ui_gallery_cols.change(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery]).success(fn=None, js="function(){ setTimeout(()=>window.renderGalleryFolderSeparators && window.renderGalleryFolderSeparators(), 80); return []; }")
+    ui_gallery_cols.release(fn=update_gallery_columns, inputs=[ui_gallery_cols], outputs=[gallery]).success(fn=None, js="function(){ setTimeout(()=>window.renderGalleryFolderSeparators && window.renderGalleryFolderSeparators(), 80); return []; }")
 
     ui_recent_paths_dd.change(fn=lambda p: gr.update(value=p) if p else gr.update(), inputs=[ui_recent_paths_dd], outputs=[dir_input])
-    ui_load_btn.click(fn=load_dataset, inputs=[dir_input, ui_sort_order, lang_radio], outputs=[dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state]).success(
+    ui_include_subfolders.click(
+        fn=toggle_include_subfolders,
+        inputs=[include_subfolders_state, lang_radio],
+        outputs=[include_subfolders_state, ui_include_subfolders],
+    )
+    ui_load_btn.click(fn=load_dataset, inputs=[dir_input, ui_sort_order, lang_radio, include_subfolders_state], outputs=[dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state]).success(
         fn=show_first_after_dataset_load,
         inputs=[filtered_state, ui_tracked_words, lang_radio],
         outputs=[current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status],
@@ -7718,7 +8770,7 @@ with gr.Blocks(**blocks_kwargs) as app:
     ui_btn_remove_fav.click(fn=remove_favorite, inputs=[ui_fav_dropdown, lang_radio], outputs=[ui_fav_dropdown, ui_status_text])
     ui_fav_dropdown.change(
         fn=load_favorite_dataset,
-        inputs=[ui_fav_dropdown, ui_sort_order, lang_radio],
+        inputs=[ui_fav_dropdown, ui_sort_order, lang_radio, include_subfolders_state],
         outputs=[dir_input, dataset_state, filtered_state, history_state, ui_status_text, gallery, selected_indices_state, ui_selection_status, ui_hidden_sync_input, ui_hidden_tags_input, current_idx_state],
     ).success(
         fn=show_first_after_dataset_load,
@@ -7763,9 +8815,9 @@ with gr.Blocks(**blocks_kwargs) as app:
         js="function(){ const acc = document.getElementById('gallery_csv_acc'); acc?.classList.add('csv-import-open'); return []; }",
     )
     ui_csv_import_file.upload(
-        fn=import_captions_file,
-        inputs=[ui_csv_import_file, dataset_state, lang_radio],
-        outputs=[dataset_state, ui_csv_status],
+        fn=import_captions_file_refresh,
+        inputs=[ui_csv_import_file, dataset_state, filtered_state, current_idx_state, ui_tracked_words, lang_radio],
+        outputs=[dataset_state, filtered_state, gallery, current_img, highlight_preview, current_caption, word_counter, current_idx_state, ui_viewer_status, ui_hidden_tags_input, ui_csv_status],
     ).success(fn=bias_stale_note, inputs=[lang_radio], outputs=[bias_stale_notice])
 
     # Ctrl+D : copier la caption vers l'image suivante
