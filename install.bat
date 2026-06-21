@@ -32,7 +32,7 @@ REM Afficher la version Python detectee
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do set PYVER=%%v
 echo Python detecte : %PYVER%
 
-REM 2. Creer le venv si absent
+REM 2. Creer le venv si absent, ou le recreer s'il est corrompu
 if not exist "venv\Scripts\python.exe" (
     echo.
     echo [1/3] Creation de l'environnement virtuel "venv"...
@@ -43,7 +43,21 @@ if not exist "venv\Scripts\python.exe" (
         exit /b 1
     )
 ) else (
-    echo [1/3] Environnement virtuel "venv" deja present, reutilisation.
+    REM Verifier que le venv n'est pas lie a un autre Python (ex: copie d'un autre poste)
+    "venv\Scripts\python.exe" --version >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo [1/3] Environnement virtuel corrompu detecte. Reconstruction...
+        rmdir /s /q venv
+        python -m venv venv
+        if errorlevel 1 (
+            echo [ERREUR] Impossible de recreer l'environnement virtuel.
+            pause
+            exit /b 1
+        )
+    ) else (
+        echo [1/3] Environnement virtuel "venv" deja present, reutilisation.
+    )
 )
 
 REM 3. Activer le venv
