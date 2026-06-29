@@ -7,6 +7,7 @@ image composition and the UI_T dictionary from i18n.py for labels.
 
 import os
 import io
+import re
 import math
 
 try:
