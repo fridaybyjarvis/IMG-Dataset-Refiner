@@ -56,6 +56,14 @@ try:
 except ImportError:
     HAS_TRANSLATOR = False
 
+# Import python-dotenv pour le chargement optionnel d'un fichier .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
+
 # ==========================================
 # CONFIGURATION & DICTIONNAIRES DE LANGUE
 # ==========================================
@@ -6877,6 +6885,25 @@ def import_ai_actions_json(file_path):
     except Exception as e:
         return gr.update(choices=load_ai_action_choices()), f"Erreur import JSON : {e}"
 
+def _env_api_key(kind):
+    """Récupère une clé API depuis l'environnement (.env) en fonction du backend.
+    Retourne '' si aucune clé n'est trouvée. Permet d'éviter de coller des secrets
+    dans l'UI."""
+    env_map = {
+        "ollama": None,
+        "openai_compat": ["OPENAI_API_KEY"],
+        "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+        "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    }
+    keys = env_map.get(kind)
+    if not keys:
+        return ""
+    for k in keys:
+        v = os.environ.get(k)
+        if v:
+            return v.strip()
+    return ""
+
 def _normalize_api_url(api_url, default):
     """Nettoie une URL d'API. Préfixe http:// si manquant, supprime trailing slash."""
     api_url = (str(api_url) if api_url else "").strip()
@@ -6977,8 +7004,9 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
         url = _normalize_api_url(api_url, DEFAULT_ANTHROPIC_URL)
         if not url.endswith("/v1/messages"):
             url = url + "/v1/messages"
+        api_key = api_key or _env_api_key("anthropic")
         if not api_key:
-            return "Erreur API Anthropic: clé API manquante (entrez-la dans Paramètres Avancés API)."
+            return "Erreur API Anthropic: clé API manquante (entrez-la dans Paramètres Avancés API ou définissez ANTHROPIC_API_KEY dans le fichier .env)."
         content = []
         if b64:
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
@@ -7008,10 +7036,11 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
     # --- GOOGLE GEMINI ---
     if kind == "gemini":
         url = _normalize_api_url(api_url, DEFAULT_GEMINI_URL)
+        api_key = api_key or _env_api_key("gemini")
         if not api_key:
-            return "Erreur API Gemini: clé API manquante (entrez-la dans Paramètres Avancés API)."
+            return "Erreur API Gemini: clé API manquante (entrez-la dans Paramètres Avancés API ou définissez GEMINI_API_KEY dans le fichier .env)."
         model_id = model or "gemini-2.5-flash"
-        endpoint = f"{url}/v1beta/models/{model_id}:generateContent?key={api_key}"
+        endpoint = f"{url}/v1beta/models/{model_id}:generateContent"
         parts = [{"text": prompt}]
         if b64:
             parts.insert(0, {"inline_data": {"mime_type": "image/jpeg", "data": b64}})
@@ -7024,8 +7053,12 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
         }
         if sys_prompt:
             payload["systemInstruction"] = {"parts": [{"text": str(sys_prompt).strip()}]}
+        headers = {
+            "x-goog-api-key": api_key,
+            "content-type": "application/json",
+        }
         try:
-            response = requests.post(endpoint, json=payload, timeout=timeout)
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
             response.raise_for_status()
             data = response.json()
             candidates = data.get("candidates", [])
@@ -7059,8 +7092,9 @@ def call_ai_api(prompt, model, image_path, api_backend, api_url, temp, ctx, sys_
     payload = {"model": model, "messages": messages,
                "temperature": float(temp), "max_tokens": _safe_output_tokens(ctx)}
     headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    effective_key = api_key or _env_api_key("openai_compat")
+    if effective_key:
+        headers["Authorization"] = f"Bearer {effective_key}"
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=timeout)
         response.raise_for_status()

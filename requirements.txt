@@ -6,3 +6,4 @@ requests
 imagehash
 opencv-python
 deep-translator
+python-dotenv

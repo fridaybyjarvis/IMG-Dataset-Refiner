@@ -1,5 +1,11 @@
-# Fichiers de configuration locaux
+# Fichiers de configuration locaux (peuvent contenir des secrets API)
 lora_recipes.json
+ai_settings.json
+ui_settings.json
+favorites.json
+library.json
+ai_recipes.json
+ai_actions.json
 
 # Dossier d'export par défaut
 output/
@@ -12,6 +18,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .env
+.env.local
 venv/
 env/
 .venv/
