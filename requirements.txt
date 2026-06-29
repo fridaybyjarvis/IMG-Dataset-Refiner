@@ -1,9 +1,17 @@
-gradio>=4.0.0
-pandas
-plotly
-Pillow
-requests
-imagehash
-opencv-python
-deep-translator
-python-dotenv
+# Direct dependencies with conservative upper bounds.
+# A version-pinned lockfile for exact reproducible installs
+# is provided in requirements.lock.
+#
+# The code supports both Gradio 4.x and 6.x (see the
+# get_gradio_major_version() branch in lora_manager.py);
+# keep the upper bound at <7 until a 7.x compatibility pass is done.
+
+gradio>=4.0.0,<7
+pandas>=2.0,<3
+plotly>=5.0,<7
+Pillow>=10.0,<14
+requests>=2.31,<3
+imagehash>=4.0,<5
+opencv-python>=4.8,<5
+deep-translator>=1.11,<2
+python-dotenv>=1.0,<2

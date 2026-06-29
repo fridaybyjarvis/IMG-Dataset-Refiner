@@ -1,3 +1,5 @@
 # Optional precision helpers.
 # The app starts without these packages and falls back gracefully.
-tiktoken
+# See estimate_text_tokens() in lora_manager.py.
+
+tiktoken>=0.7,<1
