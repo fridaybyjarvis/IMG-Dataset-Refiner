@@ -1,0 +1,50 @@
+NOTICE
+======
+
+This repository is a fork of NyxAwroo/IMG-Dataset-Refiner.
+
+Upstream licensing status
+-------------------------
+
+The upstream project (https://github.com/NyxAwroo/IMG-Dataset-Refiner)
+does **not** include a LICENSE file.  Under default copyright law (the
+Berne Convention, applicable in all WIPO member states), the absence of
+an open-source license means the author retains all exclusive rights.
+No part of the upstream code is licensed for copying, redistribution,
+modification, or sublicensing by third parties unless the author
+explicitly grants such rights.
+
+The upstream README describes the project as "free, open" and solicits
+donations, but this description is informal and does not constitute a
+copyright license.
+
+Scope of this fork
+------------------
+
+The following commits in this fork are original work by
+fridaybyjarvis (https://github.com/fridaybyjarvis) and are licensed
+under the terms in LICENSE-CONTRIBUTIONS (MIT):
+
+  - 8d942ea  fix(security): untrack settings files, move Gemini key
+             to header, add .env support
+  - a0d0c31  fix(deps): pin dependencies with upper bounds, add
+             reproducible lockfile
+
+All other content retains the copyright of its respective authors and
+is NOT covered by the MIT license in LICENSE-CONTRIBUTIONS.
+
+Recommended action
+------------------
+
+Until NyxAwroo adds an OSI-approved LICENSE upstream, this fork should
+be treated as "all rights reserved" for any portion that originates
+from the upstream project.  The original author should be contacted
+(see the Issues tab on the upstream repository) to request that a
+license be added.
+
+Disclaimer
+----------
+
+This NOTICE is informational and does not constitute legal advice.
+Consult a qualified attorney for any legal questions regarding the use
+or redistribution of this code.
